@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenShift Service Mesh Multi-Cluster</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='20' y='30' width='60' height='45' rx='10' fill='%238aadf4'/><rect x='30' y='45' width='12' height='12' rx='3' fill='%2324273a'/><rect x='58' y='45' width='12' height='12' rx='3' fill='%2324273a'/><rect x='40' y='62' width='20' height='4' rx='2' fill='%2324273a'/><rect x='42' y='15' width='16' height='18' rx='4' fill='%23a6da95'/><rect x='48' y='5' width='4' height='12' fill='%23a6da95'/><circle cx='50' cy='3' r='4' fill='%23a6da95'/><rect x='10' y='45' width='10' height='5' rx='2' fill='%238aadf4'/><rect x='80' y='45' width='10' height='5' rx='2' fill='%238aadf4'/><rect x='30' y='75' width='12' height='12' rx='2' fill='%238aadf4'/><rect x='58' y='75' width='12' height='12' rx='2' fill='%238aadf4'/></svg>">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ctp-rosewater: #f4dbd6; --ctp-flamingo: #f0c6c6;
+  --ctp-pink: #f5bde6; --ctp-mauve: #c6a0f6;
+  --ctp-red: #ed8796; --ctp-maroon: #ee99a0;
+  --ctp-peach: #f5a97f; --ctp-yellow: #eed49f;
+  --ctp-green: #a6da95; --ctp-teal: #8bd5ca;
+  --ctp-sky: #91d7e3; --ctp-sapphire: #7dc4e4;
+  --ctp-blue: #8aadf4; --ctp-lavender: #b7bdf8;
+  --ctp-text: #cad3f5; --ctp-subtext1: #b8c0e0;
+  --ctp-subtext0: #a5adcb; --ctp-overlay2: #939ab7;
+  --ctp-overlay1: #8087a2; --ctp-overlay0: #6e738d;
+  --ctp-surface2: #5b6078; --ctp-surface1: #494d64;
+  --ctp-surface0: #363a4f; --ctp-base: #24273a;
+  --ctp-mantle: #1e2030; --ctp-crust: #181926;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; overflow: hidden; background: var(--ctp-crust); }
+body { font-family: 'JetBrains Mono', monospace; color: var(--ctp-text); }
+
+.slide {
+  display: none; position: fixed; inset: 0;
+  background: var(--ctp-base);
+  flex-direction: column; overflow: hidden;
+}
+.slide.active { display: flex; animation: fadeIn 0.2s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.terminal-bar {
+  background: var(--ctp-mantle); padding: 8px 16px;
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid var(--ctp-surface0);
+  flex-shrink: 0; font-size: 13px;
+}
+.terminal-dots { display: flex; gap: 6px; }
+.terminal-dots span {
+  width: 12px; height: 12px; border-radius: 50%;
+}
+.dot-red { background: var(--ctp-red); }
+.dot-yellow { background: var(--ctp-yellow); }
+.dot-green { background: var(--ctp-green); }
+.terminal-title {
+  color: var(--ctp-overlay1); margin-left: 12px; font-size: 12px;
+}
+
+.slide-content {
+  flex: 1; padding: 40px 60px; overflow-y: auto;
+  display: flex; flex-direction: column; justify-content: flex-start;
+}
+.slide-content::-webkit-scrollbar { width: 6px; }
+.slide-content::-webkit-scrollbar-track { background: var(--ctp-mantle); }
+.slide-content::-webkit-scrollbar-thumb { background: var(--ctp-surface1); border-radius: 3px; }
+
+.slide.lead .slide-content {
+  justify-content: center; align-items: center; text-align: center;
+}
+
+.prompt { color: var(--ctp-green); font-size: 14px; margin-bottom: 8px; }
+h1 {
+  color: var(--ctp-blue); font-size: 2em; font-weight: 700;
+  margin-bottom: 8px; line-height: 1.2;
+}
+h2 {
+  color: var(--ctp-mauve); font-size: 1.2em; font-weight: 400;
+  margin-bottom: 24px; line-height: 1.3;
+}
+h3 {
+  color: var(--ctp-sapphire); font-size: 1em; font-weight: 500;
+  margin: 16px 0 8px 0;
+}
+
+.slide.lead h1 {
+  font-size: 2.4em; color: var(--ctp-blue);
+  text-shadow: 0 0 40px rgba(138,173,244,0.3);
+}
+.slide.lead h2 { color: var(--ctp-subtext0); font-size: 1.1em; }
+.slide.lead .author { color: var(--ctp-overlay1); margin-top: 16px; font-size: 0.9em; }
+
+p { margin-bottom: 12px; line-height: 1.6; font-size: 0.9em; }
+strong { color: var(--ctp-peach); font-weight: 700; }
+em { color: var(--ctp-pink); font-style: italic; }
+a { color: var(--ctp-teal); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+ul, ol { margin: 8px 0 12px 24px; font-size: 0.88em; line-height: 1.7; }
+li { margin-bottom: 4px; }
+li::marker { color: var(--ctp-overlay0); }
+ul li::marker { content: "▸ "; color: var(--ctp-green); }
+
+pre {
+  background: var(--ctp-mantle); border: 1px solid var(--ctp-surface0);
+  border-radius: 8px; padding: 16px; margin: 12px 0;
+  overflow-x: auto; font-size: 0.8em; line-height: 1.5;
+}
+pre code { color: var(--ctp-text); background: none; padding: 0; }
+code {
+  background: var(--ctp-surface0); color: var(--ctp-green);
+  padding: 2px 6px; border-radius: 4px; font-size: 0.88em;
+}
+
+blockquote {
+  border-left: 3px solid var(--ctp-peach); margin: 16px 0;
+  padding: 12px 16px; background: rgba(245,169,127,0.07);
+  border-radius: 0 6px 6px 0; font-size: 0.85em;
+  color: var(--ctp-subtext1); font-style: italic;
+}
+
+table {
+  width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.8em;
+}
+th {
+  background: var(--ctp-surface0); color: var(--ctp-text);
+  padding: 8px 12px; text-align: left; font-weight: 500;
+  border-bottom: 2px solid var(--ctp-surface1);
+}
+td {
+  padding: 6px 12px; border-bottom: 1px solid var(--ctp-surface0);
+  color: var(--ctp-subtext1);
+}
+tr:hover td { background: rgba(54,58,79,0.5); }
+
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.ascii-art {
+  color: var(--ctp-blue); font-size: 0.75em; line-height: 1.3;
+  white-space: pre; font-family: 'JetBrains Mono', monospace;
+}
+.ascii-art.green { color: var(--ctp-green); }
+.ascii-art.mauve { color: var(--ctp-mauve); }
+.ascii-art.peach { color: var(--ctp-peach); }
+
+.slide.part-divider .slide-content {
+  justify-content: center; align-items: center; text-align: center;
+}
+.slide.part-divider h1 { font-size: 2em; margin-bottom: 4px; }
+.slide.part-divider h2 { color: var(--ctp-subtext0); }
+
+.slide-footer {
+  display: flex; justify-content: space-between; align-items: center;
+  background: var(--ctp-mantle); border-top: 1px solid var(--ctp-surface0);
+  padding: 6px 16px; flex-shrink: 0; font-size: 12px; z-index: 10;
+}
+.footer-left {
+  color: var(--ctp-surface2); font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;
+}
+.footer-left a { color: inherit; text-decoration: none; }
+.footer-left a:hover { color: var(--ctp-teal); text-decoration: underline; }
+.footer-nav { display: flex; gap: 4px; flex-shrink: 0; }
+.footer-nav a {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 40px; min-height: 36px; border-radius: 6px;
+  color: var(--ctp-overlay0); text-decoration: none; cursor: pointer;
+  font-size: 14px; transition: background 0.15s;
+}
+.footer-nav a:hover { background: var(--ctp-surface0); color: var(--ctp-teal); }
+.footer-nav .nav-sep {
+  width: 1px; height: 20px; background: var(--ctp-surface1);
+  margin: 0 2px; align-self: center;
+}
+.footer-right {
+  color: var(--ctp-overlay0); font-size: 12px;
+  white-space: nowrap; flex-shrink: 0;
+}
+
+.agenda-link {
+  color: var(--ctp-teal); text-decoration: none; cursor: pointer;
+}
+.agenda-link:hover { text-decoration: underline; color: var(--ctp-sky); }
+
+.lang-btn {
+  display: inline-block; padding: 16px 40px; margin: 8px 16px;
+  background: var(--ctp-surface0); color: var(--ctp-text);
+  border: 1px solid var(--ctp-surface1); border-radius: 8px;
+  font-family: 'JetBrains Mono', monospace; font-size: 1.1em;
+  cursor: pointer; text-decoration: none; transition: all 0.2s;
+}
+.lang-btn:hover {
+  background: var(--ctp-blue); color: var(--ctp-crust);
+  text-decoration: none; border-color: var(--ctp-blue);
+}
+
+@media (max-width: 768px) {
+  .slide-content { padding: 24px 24px 16px; }
+  .columns { grid-template-columns: 1fr; }
+  h1 { font-size: 1.6em; }
+  .slide.lead h1 { font-size: 1.8em; }
+  h2 { font-size: 1em; }
+  pre { font-size: 0.72em; padding: 12px; }
+  .ascii-art { font-size: 0.5em; }
+  .footer-left { font-size: 10px; }
+  .footer-right { font-size: 11px; }
+  .footer-nav a { min-width: 36px; min-height: 34px; font-size: 13px; }
+}
+@media (max-width: 480px) {
+  .slide-content { padding: 16px 12px 12px; overflow-x: auto; }
+  h1 { font-size: 1.3em; }
+  .slide.lead h1 { font-size: 1.5em; }
+  h2 { font-size: 0.9em; }
+  p { font-size: 0.82em; }
+  ul, ol { font-size: 0.8em; margin-left: 16px; }
+  pre { font-size: 0.65em; padding: 10px; }
+  table { font-size: 0.72em; }
+  .ascii-art { font-size: 0.35em; }
+  .terminal-title { display: none; }
+  .footer-left { display: none; }
+  .slide-footer { justify-content: center; gap: 16px; }
+  .footer-nav .nav-sep { height: 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Slide 0: Language Selector -->
+<section class="slide lead" id="s0">
+  <div class="terminal-bar">
+    <div class="terminal-dots"><span class="dot-red"></span><span class="dot-yellow"></span><span class="dot-green"></span></div>
+    <span class="terminal-title">claude ~ /select-language</span>
+  </div>
+  <div class="slide-content">
+    <div class="ascii-art green" style="font-size:0.5em; margin-bottom:24px;">
+ ██████╗ ███████╗███████╗███╗   ███╗
+██╔═══██╗██╔════╝██╔════╝████╗ ████║
+██║   ██║███████╗███████╗██╔████╔██║
+██║   ██║╚════██║╚════██║██║╚██╔╝██║
+╚██████╔╝███████║███████║██║ ╚═╝ ██║
+ ╚═════╝ ╚══════╝╚══════╝╚═╝     ╚═╝</div>
+    <h2>Selecione o idioma / Select your language</h2>
+    <div style="margin-top:24px;">
+      <a class="lang-btn" onclick="goTo(1)">🇧🇷 Português</a>
+      <a class="lang-btn" href="ossm-multi-cluster-en.html#start">🇺🇸 English</a>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 1: Título -->
+<section class="slide lead" id="s1">
+  <div class="terminal-bar">
+    <div class="terminal-dots"><span class="dot-red"></span><span class="dot-yellow"></span><span class="dot-green"></span></div>
+    <span class="terminal-title">claude ~ /apresentação</span>
+  </div>
+  <div class="slide-content">
+    <div class="ascii-art green" style="font-size:0.5em; margin-bottom:24px;">
+ ██████╗ ███████╗███████╗███╗   ███╗
+██╔═══██╗██╔════╝██╔════╝████╗ ████║
+██║   ██║███████╗███████╗██╔████╔██║
+██║   ██║╚════██║╚════██║██║╚██╔╝██║
+╚██████╔╝███████║███████║██║ ╚═╝ ██║
+ ╚═════╝ ╚══════╝╚══════╝╚═╝     ╚═╝</div>
+    <h1>OpenShift Service Mesh Multi-Cluster</h1>
+    <h2>Conectando malhas de serviço entre clusters OpenShift</h2>
+    <p class="author"><strong>Rafael Zago</strong> · Senior Software Automation Engineer · Red Hat</p>
+    <p style="color:var(--ctp-overlay0); font-size:0.8em; margin-top:4px;">2026</p>
+  </div>
+</section>
+
+<!-- Slide 2: Agenda -->
+<section class="slide" id="s2">
+  <div class="terminal-bar">
+    <div class="terminal-dots"><span class="dot-red"></span><span class="dot-yellow"></span><span class="dot-green"></span></div>
+    <span class="terminal-title">claude ~ /agenda</span>
+  </div>
+  <div class="slide-content">
+    <div class="prompt">$ cat agenda.md</div>
+    <h1>Agenda</h1>
+    <div class="columns">
+      <div>
+        <h3>Parte 1 — Fundamentos</h3>
+        <ol>
+          <li><a class="agenda-link" onclick="goTo(4)">O que é Service Mesh?</a></li>
+          <li><a class="agenda-link" onclick="goTo(5)">Arquitetura Multi-Cluster</a></li>
+        </ol>
+        <h3>Parte 2 — Configuração</h3>
+        <ol start="3">
+          <li><a class="agenda-link" onclick="goTo(7)">Configuração e Setup</a></li>
+        </ol>
+      </div>
+      <div>
+        <h3>Encerramento</h3>
+        <ol start="4">
+          <li><a class="agenda-link" onclick="goTo(8)">Perguntas</a></li>
+          <li><a class="agenda-link" onclick="goTo(9)">Referências</a></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Slide 3: Parte 1 Divider -->
+<section class="slide part-divider" id="s3">
+  <div class="terminal-bar">
+    <div class="terminal-dots"><span class="dot-red"></span><span class="dot-yellow"></span><span class="dot-green"></span></div>
+    <span class="terminal-title">claude ~ /fundamentos</span>
+  </div>
+  <div class="slide-content">
+    <div class="ascii-art mauve" style="margin-bottom:20px;">
+╔═══════════════════════════════╗
+║         PARTE  1              ║
+╚═══════════════════════════════╝</div>
+    <h1>Fundamentos</h1>
+  </div>
+</section>
+
+<!-- Slide 4: O que é Service Mesh -->
+<section class="slide" id="s4">
+  <div class="terminal-bar">
+    <div class="terminal-dots"><span class="dot-red"></span><span class="dot-yellow"></span><span class="dot-green"></span></div>
+    <span class="terminal-title">claude ~ /fundamentos/service-mesh</span>
+  </div>
+  <div class="slide-content">
+    <div class="prompt">$ oc get smcp -A</div>
+    <h1>O que é Service Mesh?</h1>
+    <h2>Infraestrutura dedicada para comunicação entre serviços</h2>
+    <p>[Conteúdo será adicionado]</p>
+  </div>
+</section>
+
+<!-- Slide 5: Arquitetura Multi-Cluster -->
+<section class="slide" id="s5">
+  <div class="terminal-bar">
+    <div class="terminal-dots"><span class="dot-red"></span><span class="dot-yellow"></span><span class="dot-green"></span></div>
+    <span class="terminal-title">claude ~ /fundamentos/multi-cluster</span>
+  </div>
+  <div class="slide-content">
+    <div class="prompt">$ oc get meshfederation -A</div>
+    <h1>Arquitetura Multi-Cluster</h1>
+    <h2>Estendendo a malha de serviço além de um único cluster</h2>
+    <p>[Conteúdo será adicionado]</p>
+  </div>
+</section>
+
+<!-- Slide 6: Parte 2 Divider -->
+<section class="slide part-divider" id="s6">
+  <div class="terminal-bar">
+    <div class="terminal-dots"><span class="dot-red"></span><span class="dot-yellow"></span><span class="dot-green"></span></div>
+    <span class="terminal-title">claude ~ /configuração</span>
+  </div>
+  <div class="slide-content">
+    <div class="ascii-art peach" style="margin-bottom:20px;">
+╔═══════════════════════════════╗
+║         PARTE  2              ║
+╚═══════════════════════════════╝</div>
+    <h1>Configuração</h1>
+  </div>
+</section>
+
+<!-- Slide 7: Setup -->
+<section class="slide" id="s7">
+  <div class="terminal-bar">
+    <div class="terminal-dots"><span class="dot-red"></span><span class="dot-yellow"></span><span class="dot-green"></span></div>
+    <span class="terminal-title">claude ~ /configuração/setup</span>
+  </div>
+  <div class="slide-content">
+    <div class="prompt">$ oc apply -f smcp.yaml</div>
+    <h1>Configuração e Setup</h1>
+    <h2>Preparando o ambiente multi-cluster</h2>
+    <p>[Conteúdo será adicionado]</p>
+  </div>
+</section>
+
+<!-- Slide 8: Obrigado -->
+<section class="slide lead" id="s8">
+  <div class="terminal-bar">
+    <div class="terminal-dots"><span class="dot-red"></span><span class="dot-yellow"></span><span class="dot-green"></span></div>
+    <span class="terminal-title">claude ~ /obrigado</span>
+  </div>
+  <div class="slide-content">
+    <div class="ascii-art green" style="font-size:0.55em; margin-bottom:24px;">
+ ██████╗ ██████╗ ██████╗ ██╗ ██████╗  █████╗ ██████╗  ██████╗ ██╗
+██╔═══██╗██╔══██╗██╔══██╗██║██╔════╝ ██╔══██╗██╔══██╗██╔═══██╗██║
+██║   ██║██████╔╝██████╔╝██║██║  ███╗███████║██║  ██║██║   ██║██║
+██║   ██║██╔══██╗██╔══██╗██║██║   ██║██╔══██║██║  ██║██║   ██║╚═╝
+╚██████╔╝██████╔╝██║  ██║██║╚██████╔╝██║  ██║██████╔╝╚██████╔╝██╗
+ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═════╝  ╚═════╝ ╚═╝</div>
+    <h1>Perguntas?</h1>
+    <h2>Rafael Zago</h2>
+    <p style="color:var(--ctp-subtext0); font-size:0.95em; margin-top:4px;">Senior Software Automation Engineer · Red Hat</p>
+    <p style="margin-top:20px; color:var(--ctp-teal); font-size:1em;">
+      <code>rafaelvzago.com</code>
+    </p>
+  </div>
+</section>
+
+<!-- Slide 9: Referências -->
+<section class="slide" id="s9">
+  <div class="terminal-bar">
+    <div class="terminal-dots"><span class="dot-red"></span><span class="dot-yellow"></span><span class="dot-green"></span></div>
+    <span class="terminal-title">claude ~ /referências</span>
+  </div>
+  <div class="slide-content" style="font-size:0.85em;">
+    <div class="prompt">$ cat REFERENCES.md</div>
+    <h1>Referências</h1>
+    <div class="columns">
+      <div>
+        <h3>Documentação Oficial</h3>
+        <ul>
+          <li>OpenShift Service Mesh: <code>docs.openshift.com</code></li>
+          <li>Istio Multi-Cluster: <code>istio.io/latest/docs/setup/install/multicluster</code></li>
+          <li>Sail Operator: <code>github.com/istio-ecosystem/sail-operator</code></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Projetos e Comunidade</h3>
+        <ul>
+          <li>Istio: <code>github.com/istio/istio</code></li>
+          <li>Kiali: <code>github.com/kiali/kiali</code></li>
+          <li>OSSM Must-Gather: <code>github.com/openshift/must-gather</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+var goTo, navPrev, navNext, fontIncrease, fontDecrease, fontReset;
+(function() {
+  const slides = document.querySelectorAll('.slide');
+  const indicators = [];
+  let current = 0;
+  const total = slides.length;
+  let fontScale = 1.0;
+  function applyFontSize() {
+    var size = 16 * fontScale;
+    slides.forEach(function(s) {
+      var c = s.querySelector('.slide-content');
+      if (c) c.style.fontSize = size + 'px';
+    });
+  }
+  function incFont() {
+    if (fontScale < 2.0) { fontScale = Math.round((fontScale + 0.1) * 10) / 10; applyFontSize(); }
+  }
+  function decFont() {
+    if (fontScale > 0.5) { fontScale = Math.round((fontScale - 0.1) * 10) / 10; applyFontSize(); }
+  }
+  function rstFont() { fontScale = 1.0; applyFontSize(); }
+
+  slides.forEach(function(slide, idx) {
+    if (idx <= 2) return;
+    var footer = document.createElement('div');
+    footer.className = 'slide-footer';
+    var ind = document.createElement('div');
+    ind.className = 'footer-right footer-indicator';
+    indicators.push(ind);
+    footer.innerHTML = '<div class="footer-left"><a href="https://www.rafaelvzago.com" target="_blank">rafaelvzago.com</a> · Apache 2.0</div>' +
+      '<div class="footer-nav">' +
+        '<a href="index.html" title="Início">⌂</a>' +
+        '<a onclick="navPrev()" title="Anterior">◀</a>' +
+        '<a onclick="navNext()" title="Próximo">▶</a>' +
+        '<a onclick="goTo(2)" title="Agenda">📖</a>' +
+        '<span class="nav-sep"></span>' +
+        '<a onclick="fontDecrease()" title="Diminuir fonte">A−</a>' +
+        '<a onclick="fontReset()" title="Fonte original">A</a>' +
+        '<a onclick="fontIncrease()" title="Aumentar fonte">A+</a>' +
+      '</div>';
+    footer.appendChild(ind);
+    slide.appendChild(footer);
+  });
+
+  function show(n) {
+    if (n < 0 || n >= total) return;
+    slides[current].classList.remove('active');
+    current = n;
+    slides[current].classList.add('active');
+    var label = '[' + (current + 1) + '/' + total + ']';
+    indicators.forEach(function(el) { el.textContent = label; });
+    slides[current].querySelector('.slide-content').scrollTop = 0;
+  }
+
+  goTo = show;
+  navPrev = function() { show(current - 1); };
+  navNext = function() { show(current + 1); };
+  fontIncrease = incFont;
+  fontDecrease = decFont;
+  fontReset = rstFont;
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+      e.preventDefault(); show(current + 1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault(); show(current - 1);
+    } else if (e.key === 'Home') {
+      e.preventDefault(); show(0);
+    } else if (e.key === 'End') {
+      e.preventDefault(); show(total - 1);
+    } else if (e.key === '+' || e.key === '=') {
+      e.preventDefault(); fontIncrease();
+    } else if (e.key === '-') {
+      e.preventDefault(); fontDecrease();
+    } else if (e.key === '0') {
+      e.preventDefault(); fontReset();
+    }
+  });
+
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('a, .agenda-link, .slide-footer')) return;
+    if (e.clientX > window.innerWidth / 2) show(current + 1);
+    else show(current - 1);
+  });
+
+  show(window.location.hash === '#start' ? 1 : 0);
+})();
+</script>
+
+</body>
+</html>
