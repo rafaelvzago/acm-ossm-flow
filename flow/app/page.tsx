@@ -20,6 +20,10 @@ function Cert({ x, y, width, label, root = false }: { x: number; y: number; widt
   </g>;
 }
 
+function OssmMark({ x, y, size = 50 }: { x: number; y: number; size?: number }) {
+  return <image href="/openshift-service-mesh.svg" x={x} y={y} width={size} height={size} className="cluster-mark" />;
+}
+
 function Operator({ x, y }: { x: number; y: number }) {
   return <g className="operator">
     <rect x={x} y={y} width="132" height="28" rx="14" fill="#151515" />
@@ -184,8 +188,8 @@ export default function Home() {
           <Cert x={650} y={137} width={300} label="Shared Root CA" root/><Cert x={150} y={245} width={380} label="Intermediate CA — west"/><Cert x={1070} y={245} width={380} label="Intermediate CA — east"/>
           <text x="800" y="327" textAnchor="middle" className="trust-caption trust-node">Shared trust enables mTLS between clusters</text>
 
-          <g className="cluster west"><rect x="55" y="345" width="650" height="500" rx="28" className="cluster-box"/><circle cx="105" cy="397" r="25" className="cluster-mark"/><path d="M89 399A16 16 0 1 1 121 399" className="cluster-arrow" markerEnd="url(#arrow)"/><text x="147" y="397" className="cluster-title">Cluster West</text><text x="147" y="429" className="cluster-sub">west-network</text></g>
-          <g className="cluster east"><rect x="895" y="345" width="650" height="500" rx="28" className="cluster-box"/><circle cx="945" cy="397" r="25" className="cluster-mark"/><path d="M929 399A16 16 0 1 1 961 399" className="cluster-arrow" markerEnd="url(#arrow)"/><text x="987" y="397" className="cluster-title">Cluster East</text><text x="987" y="429" className="cluster-sub">east-network</text></g>
+          <g className="cluster west"><rect x="55" y="345" width="650" height="500" rx="28" className="cluster-box"/><OssmMark x={80} y={372}/><text x="147" y="397" className="cluster-title">Cluster West</text><text x="147" y="429" className="cluster-sub">west-network</text></g>
+          <g className="cluster east"><rect x="895" y="345" width="650" height="500" rx="28" className="cluster-box"/><OssmMark x={920} y={372}/><text x="987" y="397" className="cluster-title">Cluster East</text><text x="987" y="429" className="cluster-sub">east-network</text></g>
           <Operator x={154} y={444}/><Operator x={1339} y={444}/><Control x={105} y={472}/><Gateway x={385} y={472}/><Gateway x={945} y={472}/><Control x={1290} y={472}/>
 
           <g className="apps"><rect x="105" y="607" width="550" height="125" rx="18" className="apps-box"/><text x="380" y="638" textAnchor="middle" className="apps-title">Applications</text></g>
