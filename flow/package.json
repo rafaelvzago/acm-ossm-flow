@@ -42,5 +42,5 @@
     "wrangler": "4.92.0"
   },
   "type": "module",
-  "displayName": "Istio Mesh ID Architecture"
+  "displayName": "OpenShift Service Mesh 3 — Multi-Cluster Request Flow"
 }

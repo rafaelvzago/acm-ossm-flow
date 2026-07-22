@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Starter Project",
-  description: "A clean starting point for building your site.",
+  title: "OpenShift Service Mesh 3 — Multi-Cluster Request Flow",
+  description:
+    "Interactive diagram of OpenShift Service Mesh 3 multi-cluster architecture: shared trust, remote discovery, east-west gateways, and one Istio mesh ID.",
   other: {
     "codex-preview": "development",
   },
