@@ -235,6 +235,6 @@ export default function Home() {
         <div className="timeline"><label htmlFor="progress">Timeline <span>{Math.round(progress)}%</span></label><input id="progress" type="range" min="0" max="100" step=".1" value={progress} onChange={e=>scrub(Number(e.target.value))} disabled={reduced}/><div className="chapter-buttons">{chapters.map((c,i)=><button key={c[0]} onClick={()=>go(i)} className={i===active?"active":""} disabled={reduced} aria-current={i===active?"step":undefined}><b>{String(i+1).padStart(2,"0")}</b>{c[0]}</button>)}</div></div>
       </div>
     </section>
-    <footer><span>{reduced?"Reduced-motion mode: complete architecture shown.":"Keyboard: Space play/pause • ←/→ chapters • R replay"}</span><span>Editable SVG • GSAP timeline • No video encoding</span></footer>
+    <footer><span>{reduced?"Reduced-motion mode: complete architecture shown.":"Keyboard: Space play/pause • ←/→ chapters • R replay"}</span><span>Editable SVG • GSAP timeline • <a href="/painel/">Painel TDC</a></span></footer>
   </main>;
 }
