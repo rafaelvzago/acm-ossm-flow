@@ -202,6 +202,37 @@
   font-weight: 600;
 }
 
+.painel-progress-label {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ctp-overlay1);
+  white-space: nowrap;
+}
+
+.painel-progress-label b {
+  color: var(--ctp-peach);
+  font-weight: 700;
+}
+
+.painel-progress {
+  height: 6px;
+  margin-bottom: 0.55rem;
+  border-radius: 99px;
+  background: var(--ctp-surface0);
+  overflow: hidden;
+}
+
+.painel-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--ctp-mauve), var(--ctp-peach));
+  transition: width 0.25s ease;
+}
+
 .painel-track {
   display: grid;
   grid-template-columns: 8fr 12fr 15fr 12fr 10fr 8fr;
@@ -212,17 +243,28 @@
 .painel-track a {
   display: block;
   height: 100%;
-  background: var(--ctp-surface0);
+  --fill: 0%;
+  background: linear-gradient(
+    90deg,
+    var(--ctp-green) 0%,
+    var(--ctp-green) var(--fill),
+    var(--ctp-surface0) var(--fill),
+    var(--ctp-surface0) 100%
+  );
   text-indent: -9999px;
   overflow: hidden;
   transition: background 0.2s ease, transform 0.2s ease;
 }
 
+.painel-track a[data-complete="true"] {
+  background: var(--ctp-green);
+}
+
 .painel-track a:hover,
 .painel-track a:focus-visible {
-  background: var(--ctp-blue);
   transform: scaleY(1.35);
   outline: none;
+  box-shadow: inset 0 0 0 1px var(--ctp-blue);
 }
 
 .painel-block:target {
@@ -548,6 +590,7 @@
 
   .painel-cta,
   .painel-track a,
+  .painel-progress > span,
   .painel-mark {
     transition: none !important;
   }

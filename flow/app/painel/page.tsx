@@ -176,6 +176,8 @@ const sparks = [
 ];
 
 const STORAGE_KEY = "tdc-painel-used-questions";
+const allQuestions = blocks.flatMap((b) => b.questions);
+const totalQuestions = allQuestions.length;
 
 export default function PainelPage() {
   const [used, setUsed] = useState<Record<string, boolean>>({});
@@ -189,7 +191,10 @@ export default function PainelPage() {
     }
   }, []);
 
-  const usedCount = Object.values(used).filter(Boolean).length;
+  const usedCount = allQuestions.filter((q) => used[q.id]).length;
+  const progressPct = totalQuestions
+    ? Math.round((usedCount / totalQuestions) * 100)
+    : 0;
 
   function toggleUsed(id: string) {
     setUsed((prev) => {
@@ -235,7 +240,10 @@ export default function PainelPage() {
               <strong>60 min</strong> · Florianópolis
             </span>
             <span>
-              <strong>{usedCount}</strong> perguntas marcadas
+              <strong>
+                {usedCount}/{totalQuestions}
+              </strong>{" "}
+              perguntas marcadas
             </span>
           </div>
           <a className="painel-cta" href="#roteiro">
@@ -250,13 +258,45 @@ export default function PainelPage() {
             <p className="painel-clock-label">
               Pressão do painel · <b>14:10 → 15:10</b>
             </p>
+            <p className="painel-progress-label" aria-live="polite">
+              <b>
+                {usedCount}/{totalQuestions}
+              </b>{" "}
+              · {progressPct}%
+            </p>
+          </div>
+          <div
+            className="painel-progress"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressPct}
+            aria-label="Progresso das perguntas marcadas"
+          >
+            <span style={{ width: `${progressPct}%` }} />
           </div>
           <div className="painel-track">
-            {blocks.map((b) => (
-              <a key={b.id} href={`#${b.id}`} title={`${b.title} · ${b.clock}`}>
-                {b.title}
-              </a>
-            ))}
+            {blocks.map((b) => {
+              const marked = b.questions.filter((q) => used[q.id]).length;
+              const fill = b.questions.length
+                ? Math.round((marked / b.questions.length) * 100)
+                : 0;
+              return (
+                <a
+                  key={b.id}
+                  href={`#${b.id}`}
+                  title={`${b.title} · ${b.clock} · ${marked}/${b.questions.length} marcadas`}
+                  style={{ ["--fill" as string]: `${fill}%` }}
+                  data-complete={
+                    marked > 0 && marked === b.questions.length
+                      ? "true"
+                      : "false"
+                  }
+                >
+                  {b.title}
+                </a>
+              );
+            })}
           </div>
           <div className="painel-track-legend" aria-hidden="true">
             {blocks.map((b) => (
