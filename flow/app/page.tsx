@@ -64,6 +64,7 @@ export default function Home() {
   const root = useRef<HTMLDivElement>(null);
   const timeline = useRef<gsap.core.Timeline | null>(null);
   const chapterTween = useRef<gsap.core.Tween | null>(null);
+  const scrubbing = useRef(false);
   const [playing,setPlaying]=useState(false);
   const [progress,setProgress]=useState(0);
   const [active,setActive]=useState(0);
@@ -93,7 +94,10 @@ export default function Home() {
       const tl=gsap.timeline({paused:true,defaults:{ease:"power2.out"},onUpdate:()=>{
         const t=tl.time(); let idx=0;
         chapters.forEach((c,i)=>{if(t>=c[1]) idx=i;});
-        setActive(a=>a===idx?a:idx); setProgress(Number((tl.progress()*100).toFixed(1)));
+        setActive(a=>a===idx?a:idx);
+        if(scrubbing.current) return;
+        const p=Number((tl.progress()*100).toFixed(1));
+        setProgress(prev=>prev===p?prev:p);
       },onComplete:()=>setPlaying(false)});
       tl.to(".title-group",{autoAlpha:1,y:0,duration:.45})
         .to(".cluster",{autoAlpha:1,y:0,scale:1,duration:.7,stagger:.12},.15)
@@ -157,8 +161,10 @@ export default function Home() {
 
   const toggle=()=>{const tl=timeline.current;if(!tl||reduced)return;chapterTween.current?.kill();if(tl.progress()>=.999){tl.restart();setPlaying(true);}else if(tl.paused()){tl.play();setPlaying(true);}else{tl.pause();setPlaying(false);}};
   const replay=()=>{const tl=timeline.current;if(!tl||reduced)return;chapterTween.current?.kill();tl.restart();setPlaying(true);};
-  const go=(i:number)=>{const tl=timeline.current;if(!tl||reduced)return;chapterTween.current?.kill();tl.pause();tl.time(Number(chapters[i][2]),false);setPlaying(false);};
+  const go=(i:number)=>{const tl=timeline.current;if(!tl||reduced)return;chapterTween.current?.kill();tl.pause();tl.time(Number(chapters[i][2]),false);setProgress(Number((tl.progress()*100).toFixed(1)));setActive(i);setPlaying(false);};
   const scrub=(v:number)=>{const tl=timeline.current;if(!tl||reduced)return;chapterTween.current?.kill();tl.pause().progress(v/100);setProgress(v);setPlaying(false);};
+  const beginScrub=()=>{if(reduced)return;scrubbing.current=true;timeline.current?.pause();setPlaying(false);};
+  const endScrub=()=>{scrubbing.current=false;};
   const changeSpeed=(s:number)=>{setSpeed(s);timeline.current?.timeScale(s);};
 
   useEffect(()=>{const key=(e:KeyboardEvent)=>{if((e.target as HTMLElement)?.matches("button,input,textarea,select"))return;if(e.code==="Space"){e.preventDefault();toggle();}if(e.key==="ArrowRight")go(Math.min(5,active+1));if(e.key==="ArrowLeft")go(Math.max(0,active-1));if(e.key.toLowerCase()==="r")replay();};window.addEventListener("keydown",key);return()=>window.removeEventListener("keydown",key);});
@@ -232,7 +238,7 @@ export default function Home() {
       <div className="controls">
         <div className="transport"><button className="primary" onClick={toggle} disabled={reduced}>{playing?"Ⅱ  Pause":"▶  Play"}</button><button onClick={replay} disabled={reduced}>↻ Replay</button>{[.5,1,2].map(s=><button key={s} onClick={()=>changeSpeed(s)} disabled={reduced} style={s===speed?{borderColor:"var(--red)",background:"var(--soft)",color:"var(--dark-red)"}:{}}>{s===1?"1":s<1?"½":"2"}×</button>)}</div>
         <div className="chapter-copy" aria-live="polite"><p>{String(active+1).padStart(2,"0")} / 06</p><h2>{chapter[3]}</h2><span>{chapter[4]}</span></div>
-        <div className="timeline"><label htmlFor="progress">Timeline <span>{Math.round(progress)}%</span></label><input id="progress" type="range" min="0" max="100" step=".1" value={progress} onChange={e=>scrub(Number(e.target.value))} disabled={reduced}/><div className="chapter-buttons">{chapters.map((c,i)=><button key={c[0]} onClick={()=>go(i)} className={i===active?"active":""} disabled={reduced} aria-current={i===active?"step":undefined}><b>{String(i+1).padStart(2,"0")}</b>{c[0]}</button>)}</div></div>
+        <div className="timeline"><label htmlFor="progress">Timeline <span>{Math.round(progress)}%</span></label><input id="progress" type="range" min="0" max="100" step=".1" value={progress} onPointerDown={beginScrub} onPointerUp={endScrub} onPointerCancel={endScrub} onChange={e=>scrub(Number(e.target.value))} disabled={reduced}/><div className="chapter-buttons">{chapters.map((c,i)=><button key={c[0]} onClick={()=>go(i)} className={i===active?"active":""} disabled={reduced} aria-current={i===active?"step":undefined}><b>{String(i+1).padStart(2,"0")}</b>{c[0]}</button>)}</div></div>
       </div>
     </section>
     <footer><span>{reduced?"Reduced-motion mode: complete architecture shown.":"Keyboard: Space play/pause • ←/→ chapters • R replay"}</span><span>Editable SVG • GSAP timeline • <a href="/painel/">Painel TDC</a></span></footer>
