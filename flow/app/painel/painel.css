@@ -35,7 +35,7 @@
 
   color-scheme: dark;
   color: var(--ink);
-  font-family: var(--font-body), "JetBrains Mono", ui-monospace, monospace;
+  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   background:
     radial-gradient(ellipse 80% 50% at 100% -10%, var(--glow), transparent 55%),
     radial-gradient(ellipse 55% 40% at 0% 15%, color-mix(in srgb, var(--ctp-blue) 12%, transparent), transparent 50%),
@@ -87,7 +87,6 @@
 .painel-kicker {
   position: relative;
   margin: 0 0 1.25rem;
-  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.14em;
@@ -98,9 +97,8 @@
 .painel-brand {
   position: relative;
   margin: 0;
-  font-family: var(--font-display), "JetBrains Mono", ui-monospace, monospace;
   font-size: clamp(2.2rem, 6vw, 3.75rem);
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.05;
   letter-spacing: -0.035em;
   max-width: 18ch;
@@ -127,7 +125,6 @@
   flex-wrap: wrap;
   gap: 0.65rem 1.5rem;
   margin-top: 1.75rem;
-  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.78rem;
   color: var(--ctp-overlay1);
 }
@@ -147,7 +144,6 @@
   border: 0;
   background: var(--ctp-mauve);
   color: var(--ctp-crust);
-  font-family: var(--font-display), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -168,7 +164,6 @@
 }
 
 .painel-root a.painel-cta span {
-  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.75rem;
   color: var(--ctp-crust);
 }
@@ -195,7 +190,6 @@
 
 .painel-clock-label {
   margin: 0;
-  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.7rem;
   font-weight: 600;
   letter-spacing: 0.12em;
@@ -231,8 +225,9 @@
   outline: none;
 }
 
-.painel-track a[data-active="true"] {
-  background: var(--ctp-peach);
+.painel-block:target {
+  outline: 1px solid var(--ctp-surface1);
+  outline-offset: 8px;
 }
 
 .painel-track-legend {
@@ -240,7 +235,6 @@
   grid-template-columns: 8fr 12fr 15fr 12fr 10fr 8fr;
   gap: 3px;
   margin-top: 0.45rem;
-  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.62rem;
   color: var(--ctp-overlay0);
 }
@@ -273,7 +267,6 @@
 
 .painel-intro h2 {
   margin: 0 0 0.75rem;
-  font-family: var(--font-display), "JetBrains Mono", ui-monospace, monospace;
   font-size: clamp(1.4rem, 3vw, 1.85rem);
   font-weight: 700;
   letter-spacing: -0.03em;
@@ -304,7 +297,6 @@
 }
 
 .painel-people strong {
-  font-family: var(--font-display), "JetBrains Mono", ui-monospace, monospace;
   font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -323,7 +315,6 @@
 }
 
 .painel-people span {
-  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.72rem;
   color: var(--ctp-overlay1);
 }
@@ -365,7 +356,6 @@
 
 .painel-block-head h2 {
   margin: 0;
-  font-family: var(--font-display), "JetBrains Mono", ui-monospace, monospace;
   font-size: clamp(1.35rem, 2.8vw, 1.75rem);
   font-weight: 700;
   letter-spacing: -0.03em;
@@ -373,7 +363,6 @@
 }
 
 .painel-block-time {
-  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--ctp-mauve);
@@ -412,7 +401,6 @@
 }
 
 .painel-q-num {
-  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.72rem;
   font-weight: 600;
   color: var(--ctp-peach);
@@ -432,7 +420,6 @@
 .painel-q-note {
   display: block;
   margin-top: 0.4rem;
-  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.72rem;
   line-height: 1.4;
   color: var(--ctp-teal);
@@ -443,7 +430,6 @@
   border: 1px solid var(--ctp-surface1);
   background: transparent;
   color: var(--ctp-overlay1);
-  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.65rem;
   font-weight: 500;
   letter-spacing: 0.06em;
@@ -475,7 +461,6 @@
 
 .painel-sparks h2 {
   margin: 0 0 0.75rem;
-  font-family: var(--font-display), "JetBrains Mono", ui-monospace, monospace;
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -506,7 +491,6 @@
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 0.75rem;
-  font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.7rem;
   color: var(--ctp-overlay0);
 }

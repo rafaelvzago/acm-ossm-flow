@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 type Question = {
   id: string;
@@ -179,7 +179,6 @@ const STORAGE_KEY = "tdc-painel-used-questions";
 
 export default function PainelPage() {
   const [used, setUsed] = useState<Record<string, boolean>>({});
-  const [activeBlock, setActiveBlock] = useState(blocks[0].id);
 
   useEffect(() => {
     try {
@@ -190,31 +189,7 @@ export default function PainelPage() {
     }
   }, []);
 
-  useEffect(() => {
-    const nodes = blocks
-      .map((b) => document.getElementById(b.id))
-      .filter((n): n is HTMLElement => Boolean(n));
-
-    if (!nodes.length) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
-        if (visible[0]?.target?.id) setActiveBlock(visible[0].target.id);
-      },
-      { rootMargin: "-30% 0px -55% 0px", threshold: [0.15, 0.4, 0.7] },
-    );
-
-    nodes.forEach((n) => observer.observe(n));
-    return () => observer.disconnect();
-  }, []);
-
-  const usedCount = useMemo(
-    () => Object.values(used).filter(Boolean).length,
-    [used],
-  );
+  const usedCount = Object.values(used).filter(Boolean).length;
 
   function toggleUsed(id: string) {
     setUsed((prev) => {
@@ -275,18 +250,10 @@ export default function PainelPage() {
             <p className="painel-clock-label">
               Pressão do painel · <b>14:10 → 15:10</b>
             </p>
-            <p className="painel-clock-label">
-              Bloco ativo: <b>{blocks.find((b) => b.id === activeBlock)?.title}</b>
-            </p>
           </div>
           <div className="painel-track">
             {blocks.map((b) => (
-              <a
-                key={b.id}
-                href={`#${b.id}`}
-                data-active={activeBlock === b.id}
-                title={`${b.title} · ${b.clock}`}
-              >
+              <a key={b.id} href={`#${b.id}`} title={`${b.title} · ${b.clock}`}>
                 {b.title}
               </a>
             ))}

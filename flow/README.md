@@ -51,18 +51,17 @@ npm ci
 npm run dev
 ```
 
-Open the local URL printed by Vite (often `http://localhost:5173` or `5174`).
+Open [http://localhost:3000](http://localhost:3000) (`next dev`).
 
 - Home: `/`
 - Panel: `/painel/`
 
-## Build for GitHub Pages
+## Build & test
 
 ```bash
-npm run build:pages
+npm run build:pages   # static export → out/
+npm test              # build:pages + smoke check for out/
 ```
-
-Output lands in `out/` (includes `CNAME` and `/painel/`).
 
 Deploy is automatic on push to `main` via [`.github/workflows/deploy-pages.yml`](.github/workflows/deploy-pages.yml).
 
@@ -79,6 +78,8 @@ public/
   openshift-service-mesh.svg
 .github/workflows/
   deploy-pages.yml
+tests/
+  pages-smoke.test.mjs
 ```
 
 ## License
