@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { gsap } from "gsap";
 
@@ -168,7 +167,7 @@ export default function Home() {
   return <main className="page" ref={root}>
     <header className="header">
       <div><p>OpenShift Service Mesh 3</p><h1>Istio mesh ID architecture</h1></div>
-      <div className="tags"><Link href="/talk/">TDC talk</Link><span>OSSM 3</span><span>Sail operator</span><span>Istio</span></div>
+      <div className="tags"><span>OSSM 3</span><span>Sail operator</span><span>Istio</span></div>
     </header>
 
     <section className="experience" aria-label="Interactive Istio mesh architecture animation">
