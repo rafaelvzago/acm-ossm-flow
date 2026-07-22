@@ -1,5 +1,7 @@
 /* Catppuccin Macchiato — same tokens as claude.rafaelvzago.com */
 .painel-root {
+  overflow-x: clip;
+
   --ctp-peach: #f5a97f;
   --ctp-green: #a6da95;
   --ctp-teal: #8bd5ca;
@@ -52,6 +54,8 @@
 .painel-shell {
   width: min(1120px, calc(100% - 2rem));
   margin-inline: auto;
+  padding-inline: env(safe-area-inset-left, 0)
+    env(safe-area-inset-right, 0);
 }
 
 /* —— Hero —— */
@@ -97,25 +101,30 @@
 .painel-brand {
   position: relative;
   margin: 0;
-  font-size: clamp(2.2rem, 6vw, 3.75rem);
+  max-width: none;
+  width: 100%;
+  font-size: clamp(1.85rem, 5.2vw, 3.75rem);
   font-weight: 700;
-  line-height: 1.05;
+  line-height: 1.08;
   letter-spacing: -0.035em;
-  max-width: 18ch;
+  text-wrap: balance;
   color: var(--ctp-text);
 }
 
 .painel-brand em {
   font-style: normal;
   color: var(--ctp-peach);
+  white-space: nowrap;
 }
 
 .painel-lead {
   position: relative;
   margin: 1.4rem 0 0;
-  max-width: 38rem;
-  font-size: clamp(1.05rem, 2.2vw, 1.25rem);
-  line-height: 1.45;
+  max-width: none;
+  width: 100%;
+  font-size: clamp(1rem, 2.4vw, 1.25rem);
+  line-height: 1.5;
+  text-wrap: pretty;
   color: var(--ctp-subtext1);
 }
 
@@ -552,17 +561,74 @@
     width: min(1120px, calc(100% - 1.25rem));
   }
 
+  .painel-brand {
+    font-size: clamp(1.65rem, 8.5vw, 2.35rem);
+  }
+
+  .painel-lead {
+    font-size: 1rem;
+  }
+
+  .painel-kicker {
+    letter-spacing: 0.1em;
+    line-height: 1.35;
+  }
+
+  .painel-meta {
+    gap: 0.45rem 1rem;
+    font-size: 0.74rem;
+  }
+
+  .painel-clock {
+    top: env(safe-area-inset-top, 0);
+    padding-top: calc(0.75rem + env(safe-area-inset-top, 0px));
+  }
+
+  .painel-clock-row {
+    flex-wrap: wrap;
+    gap: 0.35rem 0.75rem;
+  }
+
+  .painel-clock-label,
+  .painel-progress-label {
+    white-space: normal;
+    line-height: 1.35;
+  }
+
   .painel-q {
     grid-template-columns: auto 1fr;
+  }
+
+  .painel-q-text {
+    font-size: 1.02rem;
+    overflow-wrap: break-word;
   }
 
   .painel-mark {
     grid-column: 2;
     justify-self: start;
+    min-height: 2.5rem;
+    padding: 0.55rem 0.85rem;
   }
 
   .painel-hero {
     padding: 1.5rem 0 1.75rem;
+  }
+
+  .painel-root a.painel-cta {
+    width: 100%;
+    justify-content: center;
+    min-height: 2.75rem;
+  }
+
+  .painel-block {
+    scroll-margin-top: 6.5rem;
+  }
+
+  .painel-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    padding-bottom: env(safe-area-inset-bottom, 0);
   }
 }
 

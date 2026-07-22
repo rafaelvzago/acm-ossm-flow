@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import "./painel.css";
 
@@ -13,6 +13,13 @@ export const metadata: Metadata = {
   title: "Painel · Arquitetura resiliente sob pressão | TDC Floripa 2026",
   description:
     "Roteiro de perguntas e timing para o painel Arquitetura resiliente sob pressão — Trilha Arquitetura Cloud, TDC Florianópolis 2026.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#181926",
 };
 
 export default function PainelLayout({
