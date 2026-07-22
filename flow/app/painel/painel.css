@@ -311,6 +311,17 @@
   color: var(--ctp-text);
 }
 
+.painel-people strong a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.painel-people strong a:hover {
+  color: var(--ctp-blue);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .painel-people span {
   font-family: var(--font-mono), "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.72rem;

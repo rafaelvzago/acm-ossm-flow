@@ -320,6 +320,18 @@ export default function PainelPage() {
                 <strong>Flávio Pimenta</strong>
                 <span>Staff Engineer · Select Soluções</span>
               </li>
+              <li>
+                <strong>
+                  <a
+                    href="https://www.linkedin.com/in/amim/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Amim K.
+                  </a>
+                </strong>
+                <span>Principal Software Engineer · Broadcom</span>
+              </li>
             </ul>
           </section>
 
