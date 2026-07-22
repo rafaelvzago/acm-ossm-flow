@@ -266,16 +266,13 @@ export default function PainelPage() {
             </p>
           </div>
           <div
-            className="painel-progress"
+            className="painel-track"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={progressPct}
             aria-label="Progresso das perguntas marcadas"
           >
-            <span style={{ width: `${progressPct}%` }} />
-          </div>
-          <div className="painel-track">
             {blocks.map((b) => {
               const marked = b.questions.filter((q) => used[q.id]).length;
               const fill = b.questions.length

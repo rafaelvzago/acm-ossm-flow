@@ -213,24 +213,8 @@
 }
 
 .painel-progress-label b {
-  color: var(--ctp-peach);
+  color: var(--ctp-green);
   font-weight: 700;
-}
-
-.painel-progress {
-  height: 6px;
-  margin-bottom: 0.55rem;
-  border-radius: 99px;
-  background: var(--ctp-surface0);
-  overflow: hidden;
-}
-
-.painel-progress > span {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--ctp-mauve), var(--ctp-peach));
-  transition: width 0.25s ease;
 }
 
 .painel-track {
@@ -590,7 +574,6 @@
 
   .painel-cta,
   .painel-track a,
-  .painel-progress > span,
   .painel-mark {
     transition: none !important;
   }
