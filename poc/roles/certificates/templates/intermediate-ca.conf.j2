@@ -1,0 +1,20 @@
+[ req ]
+encrypt_key = no
+prompt = no
+utf8 = yes
+default_md = sha256
+default_bits = {{ certificates_intermediate_key_size }}
+req_extensions = req_ext
+x509_extensions = req_ext
+distinguished_name = req_dn
+[ req_ext ]
+subjectKeyIdentifier = hash
+basicConstraints = critical, CA:true, pathlen:0
+keyUsage = critical, digitalSignature, nonRepudiation, keyEncipherment, keyCertSign
+subjectAltName=@san
+[ san ]
+DNS.1 = istiod.{{ certificates_mesh_namespace }}.svc
+[ req_dn ]
+O = {{ certificates_org }}
+CN = {{ certificates_intermediate_cn }}
+L = {{ cluster_name }}

@@ -1,0 +1,49 @@
+---
+- name: Create root CA directory
+  ansible.builtin.file:
+    path: "{{ certificates_dir }}/root"
+    state: directory
+    mode: "0700"
+
+- name: Generate root CA private key
+  ansible.builtin.command:
+    cmd: >-
+      openssl genrsa
+      -out {{ certificates_dir }}/root/root-key.pem
+      {{ certificates_root_key_size }}
+    creates: "{{ certificates_dir }}/root/root-key.pem"
+
+- name: Template root CA config
+  ansible.builtin.template:
+    src: root-ca.conf.j2
+    dest: "{{ certificates_dir }}/root/root-ca.conf"
+    mode: "0644"
+
+- name: Generate root CA CSR
+  ansible.builtin.command:
+    cmd: >-
+      openssl req -sha256 -new
+      -key {{ certificates_dir }}/root/root-key.pem
+      -config {{ certificates_dir }}/root/root-ca.conf
+      -out {{ certificates_dir }}/root/root-cert.csr
+    creates: "{{ certificates_dir }}/root/root-cert.csr"
+
+- name: Sign root CA certificate
+  ansible.builtin.command:
+    cmd: >-
+      openssl x509 -req -sha256 -days {{ certificates_validity_days }}
+      -signkey {{ certificates_dir }}/root/root-key.pem
+      -extensions req_ext -extfile {{ certificates_dir }}/root/root-ca.conf
+      -in {{ certificates_dir }}/root/root-cert.csr
+      -out {{ certificates_dir }}/root/root-cert.pem
+    creates: "{{ certificates_dir }}/root/root-cert.pem"
+
+- name: Generate intermediate CAs for each cluster
+  ansible.builtin.include_tasks: intermediate.yml
+  loop: "{{ clusters | dict2items }}"
+  loop_control:
+    loop_var: cluster_entry
+    label: "{{ cluster_entry.key }}"
+  vars:
+    cluster_name: "{{ cluster_entry.key }}"
+    int_ca_dir: "{{ certificates_dir }}/{{ cluster_entry.key }}"

@@ -1,0 +1,38 @@
+---
+- name: Generate reader kubeconfig for each cluster
+  ansible.builtin.include_tasks: generate-kubeconfig.yml
+  loop: "{{ clusters | dict2items }}"
+  loop_control:
+    loop_var: cluster_entry
+    label: "{{ cluster_entry.key }}"
+  vars:
+    cluster: "{{ cluster_entry.value }}"
+    cluster_key: "{{ cluster_entry.key }}"
+
+- name: Create remote secret pointing at peer cluster
+  kubernetes.core.k8s:
+    state: present
+    force: true
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: "istio-remote-secret-{{ item.remote.name }}"
+        namespace: "{{ mesh_namespace }}"
+        annotations:
+          networking.istio.io/cluster: "{{ item.remote.name }}"
+        labels:
+          istio/multiCluster: "true"
+      type: Opaque
+      stringData:
+        "{{ item.remote.name }}": "{{ item.remote_kubeconfig }}"
+    kubeconfig: "{{ item.local.kubeconfig }}"
+  loop:
+    - local: "{{ clusters.west }}"
+      remote: "{{ clusters.east }}"
+      remote_kubeconfig: "{{ _reader_kubeconfig_east }}"
+    - local: "{{ clusters.east }}"
+      remote: "{{ clusters.west }}"
+      remote_kubeconfig: "{{ _reader_kubeconfig_west }}"
+  loop_control:
+    label: "{{ item.local.name }} has secret for {{ item.remote.name }}"

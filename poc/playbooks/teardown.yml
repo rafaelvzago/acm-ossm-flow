@@ -1,0 +1,95 @@
+---
+- name: Teardown OSSM Multi-Cluster POC
+  hosts: localhost
+  gather_facts: false
+
+  tasks:
+    - name: Delete demo app namespaces
+      kubernetes.core.k8s:
+        kind: Namespace
+        name: "{{ item.1 }}"
+        state: absent
+        kubeconfig: "{{ item.0.value.kubeconfig }}"
+      loop: >-
+        {{ clusters | dict2items |
+           product([bookinfo_namespace, sleep_namespace]) |
+           list }}
+      loop_control:
+        label: "{{ item.0.key }}/{{ item.1 }}"
+      failed_when: false
+
+    - name: Delete east-west gateway resources
+      kubernetes.core.k8s:
+        state: absent
+        definition:
+          apiVersion: "{{ resource.api }}"
+          kind: "{{ resource.kind }}"
+          metadata:
+            name: istio-eastwestgateway
+            namespace: "{{ mesh_namespace }}"
+        kubeconfig: "{{ cluster.value.kubeconfig }}"
+      loop: >-
+        {{ clusters | dict2items | product([
+          {'api': 'networking.istio.io/v1beta1', 'kind': 'Gateway'},
+          {'api': 'apps/v1', 'kind': 'Deployment'},
+          {'api': 'v1', 'kind': 'Service'}
+        ]) | list }}
+      loop_control:
+        label: "{{ item.0.key }}/{{ item.1.kind }}"
+      vars:
+        cluster: "{{ item.0 }}"
+        resource: "{{ item.1 }}"
+      failed_when: false
+
+    - name: Delete SMCP
+      kubernetes.core.k8s:
+        api_version: maistra.io/v2
+        kind: ServiceMeshControlPlane
+        name: "{{ smcp_name }}"
+        namespace: "{{ mesh_namespace }}"
+        state: absent
+        kubeconfig: "{{ item.value.kubeconfig }}"
+      loop: "{{ clusters | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      failed_when: false
+
+    - name: Wait for SMCP deletion
+      kubernetes.core.k8s_info:
+        api_version: maistra.io/v2
+        kind: ServiceMeshControlPlane
+        name: "{{ smcp_name }}"
+        namespace: "{{ mesh_namespace }}"
+        kubeconfig: "{{ item.value.kubeconfig }}"
+      register: smcp_gone
+      until: smcp_gone.resources | length == 0
+      retries: 30
+      delay: 10
+      loop: "{{ clusters | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      failed_when: false
+
+    - name: Delete istio-system namespace
+      kubernetes.core.k8s:
+        kind: Namespace
+        name: "{{ mesh_namespace }}"
+        state: absent
+        kubeconfig: "{{ item.value.kubeconfig }}"
+      loop: "{{ clusters | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      failed_when: false
+
+    - name: Clean up local certificate files
+      ansible.builtin.file:
+        path: "{{ certificates_dir }}"
+        state: absent
+
+    - name: Clean up downloaded manifests
+      ansible.builtin.file:
+        path: "/tmp/{{ item }}.yaml"
+        state: absent
+      loop:
+        - bookinfo
+        - sleep

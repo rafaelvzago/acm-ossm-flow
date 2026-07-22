@@ -1,0 +1,13 @@
+---
+- name: Set up mesh control plane on each cluster
+  ansible.builtin.include_tasks: per-cluster.yml
+  loop: "{{ clusters | dict2items }}"
+  loop_control:
+    loop_var: cluster_entry
+    label: "{{ cluster_entry.key }}"
+  vars:
+    cluster: "{{ cluster_entry.value }}"
+    cluster_key: "{{ cluster_entry.key }}"
+    remote_network: remote-network
+    remote_cluster: remote-cluster
+    remote_gateway_address: remote-gateway

@@ -1,0 +1,44 @@
+---
+- name: "Create app namespace - {{ cluster_key ~ '/' ~ app_namespace }}"
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ app_namespace }}"
+        labels:
+          istio-injection: enabled
+    kubeconfig: "{{ cluster.kubeconfig }}"
+
+- name: "Download app manifest - {{ cluster_key ~ '/' ~ app_name }}"
+  ansible.builtin.get_url:
+    url: "{{ manifest_url }}"
+    dest: "/tmp/{{ app_name }}.yaml"
+    mode: "0644"
+    force: false
+
+- name: "Apply app manifest - {{ cluster_key ~ '/' ~ app_name }}"
+  kubernetes.core.k8s:
+    state: present
+    src: "/tmp/{{ app_name }}.yaml"
+    namespace: "{{ app_namespace }}"
+    kubeconfig: "{{ cluster.kubeconfig }}"
+
+- name: "Wait for app pods ready - {{ cluster_key ~ '/' ~ app_name }}"
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ app_namespace }}"
+    kubeconfig: "{{ cluster.kubeconfig }}"
+    label_selectors:
+      - "app"
+  register: demo_apps_pods
+  until: >-
+    demo_apps_pods.resources | length > 0 and
+    demo_apps_pods.resources
+    | selectattr('status.phase', 'equalto', 'Running')
+    | list | length
+    == demo_apps_pods.resources | length
+  retries: 30
+  delay: 10

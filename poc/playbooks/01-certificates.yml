@@ -1,0 +1,6 @@
+---
+- name: "Phase 1: Certificate Authority Setup"
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - certificates

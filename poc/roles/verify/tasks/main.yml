@@ -1,0 +1,71 @@
+---
+- name: Verify SMCP is Ready on both clusters
+  kubernetes.core.k8s_info:
+    api_version: maistra.io/v2
+    kind: ServiceMeshControlPlane
+    name: basic
+    namespace: "{{ mesh_namespace }}"
+    kubeconfig: "{{ item.value.kubeconfig }}"
+  register: verify_smcp_check
+  failed_when: >-
+    verify_smcp_check.resources | length == 0 or
+    verify_smcp_check.resources[0].status.conditions | default([]) |
+    selectattr('type', 'equalto', 'Ready') |
+    selectattr('status', 'equalto', 'True') | list | length == 0
+  loop: "{{ clusters | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Verify east-west gateway pods are Running
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ mesh_namespace }}"
+    label_selectors:
+      - "istio=eastwestgateway"
+    kubeconfig: "{{ item.value.kubeconfig }}"
+  register: verify_gw_pods
+  failed_when: >-
+    verify_gw_pods.resources | length == 0 or
+    verify_gw_pods.resources
+    | selectattr('status.phase', 'equalto', 'Running')
+    | list | length == 0
+  loop: "{{ clusters | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+
+- name: Get sleep pod name on east cluster
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: "{{ sleep_namespace }}"
+    label_selectors:
+      - "app=sleep"
+    kubeconfig: "{{ clusters.east.kubeconfig }}"
+  register: verify_sleep_pods
+  failed_when: verify_sleep_pods.resources | length == 0
+
+- name: Set sleep pod name
+  ansible.builtin.set_fact:
+    verify_sleep_pod: "{{ verify_sleep_pods.resources[0].metadata.name }}"
+
+- name: Test cross-cluster connectivity (east -> west productpage)
+  ansible.builtin.command:
+    cmd: >-
+      oc exec {{ verify_sleep_pod }}
+      -n {{ sleep_namespace }}
+      -c sleep
+      --kubeconfig={{ clusters.east.kubeconfig }}
+      -- curl -s -o /dev/null -w '%{http_code}'
+      productpage.{{ bookinfo_namespace }}:9080/productpage
+  register: verify_connectivity
+  changed_when: false
+  failed_when: verify_connectivity.stdout != '200'
+
+- name: Verification summary
+  ansible.builtin.debug:
+    msg:
+      - "=== OSSM Multi-Cluster Verification ==="
+      - "SMCP Ready: PASSED (both clusters)"
+      - "East-West Gateways: PASSED (both clusters)"
+      - "Cross-Cluster Connectivity: PASSED (HTTP {{ verify_connectivity.stdout }})"

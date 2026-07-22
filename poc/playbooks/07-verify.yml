@@ -1,0 +1,6 @@
+---
+- name: "Phase 7: Cross-Cluster Verification"
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - verify

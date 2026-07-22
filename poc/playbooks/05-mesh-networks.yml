@@ -1,0 +1,6 @@
+---
+- name: "Phase 5: Mesh Network Configuration"
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - mesh-networks

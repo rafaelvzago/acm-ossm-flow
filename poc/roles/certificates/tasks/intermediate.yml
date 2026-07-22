@@ -1,0 +1,53 @@
+---
+- name: "Create intermediate CA directory for {{ cluster_name }}"
+  ansible.builtin.file:
+    path: "{{ int_ca_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: "Generate intermediate private key for {{ cluster_name }}"
+  ansible.builtin.command:
+    cmd: >-
+      openssl genrsa
+      -out {{ int_ca_dir }}/ca-key.pem
+      {{ certificates_intermediate_key_size }}
+    creates: "{{ int_ca_dir }}/ca-key.pem"
+
+- name: "Template intermediate CA config for {{ cluster_name }}"
+  ansible.builtin.template:
+    src: intermediate-ca.conf.j2
+    dest: "{{ int_ca_dir }}/intermediate.conf"
+    mode: "0644"
+
+- name: "Generate intermediate CSR for {{ cluster_name }}"
+  ansible.builtin.command:
+    cmd: >-
+      openssl req -new
+      -config {{ int_ca_dir }}/intermediate.conf
+      -key {{ int_ca_dir }}/ca-key.pem
+      -out {{ int_ca_dir }}/cluster-ca.csr
+    creates: "{{ int_ca_dir }}/cluster-ca.csr"
+
+- name: "Sign intermediate certificate with root CA for {{ cluster_name }}"
+  ansible.builtin.command:
+    cmd: >-
+      openssl x509 -req -sha256 -days {{ certificates_validity_days }}
+      -CA {{ certificates_dir }}/root/root-cert.pem
+      -CAkey {{ certificates_dir }}/root/root-key.pem -CAcreateserial
+      -extensions req_ext -extfile {{ int_ca_dir }}/intermediate.conf
+      -in {{ int_ca_dir }}/cluster-ca.csr
+      -out {{ int_ca_dir }}/ca-cert.pem
+    creates: "{{ int_ca_dir }}/ca-cert.pem"
+
+- name: "Build certificate chain for {{ cluster_name }}"
+  ansible.builtin.shell:
+    cmd: >-
+      cat {{ int_ca_dir }}/ca-cert.pem {{ certificates_dir }}/root/root-cert.pem
+      > {{ int_ca_dir }}/cert-chain.pem
+    creates: "{{ int_ca_dir }}/cert-chain.pem"
+
+- name: "Copy root cert to cluster directory for {{ cluster_name }}"
+  ansible.builtin.copy:
+    src: "{{ certificates_dir }}/root/root-cert.pem"
+    dest: "{{ int_ca_dir }}/root-cert.pem"
+    mode: "0644"

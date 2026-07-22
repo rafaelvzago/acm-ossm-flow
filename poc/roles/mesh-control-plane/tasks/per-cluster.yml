@@ -1,0 +1,69 @@
+---
+- name: "Create mesh namespace on {{ cluster_key }}"
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ mesh_namespace }}"
+        labels:
+          topology.istio.io/network: "{{ cluster.network }}"
+    kubeconfig: "{{ cluster.kubeconfig }}"
+
+- name: "Set cert path for {{ cluster_key }}"
+  ansible.builtin.set_fact:
+    _cert_path: "{{ certificates_dir }}/{{ cluster_key }}"
+
+- name: "Read certificate files for {{ cluster_key }}"
+  ansible.builtin.set_fact:
+    _ca_cert: >-
+      {{ lookup('file', _cert_path + '/ca-cert.pem') }}
+    _ca_key: >-
+      {{ lookup('file', _cert_path + '/ca-key.pem') }}
+    _root_cert: >-
+      {{ lookup('file', _cert_path + '/root-cert.pem') }}
+    _cert_chain: >-
+      {{ lookup('file', _cert_path + '/cert-chain.pem') }}
+
+- name: "Create cacerts secret on {{ cluster_key }}"
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: cacerts
+        namespace: "{{ mesh_namespace }}"
+      type: Opaque
+      stringData:
+        ca-cert.pem: "{{ _ca_cert }}"
+        ca-key.pem: "{{ _ca_key }}"
+        root-cert.pem: "{{ _root_cert }}"
+        cert-chain.pem: "{{ _cert_chain }}"
+    kubeconfig: "{{ cluster.kubeconfig }}"
+
+- name: "Apply ServiceMeshControlPlane on {{ cluster_key }}"
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'smcp.yml.j2') | from_yaml }}"
+    kubeconfig: "{{ cluster.kubeconfig }}"
+
+- name: "Wait for SMCP to be ready on {{ cluster_key }}"
+  kubernetes.core.k8s_info:
+    api_version: maistra.io/v2
+    kind: ServiceMeshControlPlane
+    name: "{{ smcp_name }}"
+    namespace: "{{ mesh_namespace }}"
+    kubeconfig: "{{ cluster.kubeconfig }}"
+  register: _smcp
+  until: >-
+    _smcp.resources | length > 0 and
+    _smcp.resources[0].status is defined and
+    _smcp.resources[0].status.conditions is defined and
+    _smcp.resources[0].status.conditions
+    | selectattr('type', 'equalto', 'Ready')
+    | selectattr('status', 'equalto', 'True')
+    | list | length > 0
+  retries: "{{ smcp_wait_retries }}"
+  delay: "{{ smcp_wait_delay }}"

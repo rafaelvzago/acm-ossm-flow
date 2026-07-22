@@ -1,0 +1,46 @@
+---
+# Cluster authentication (kubeconfig files via environment variables)
+clusters:
+  west:
+    name: west-cluster
+    network: west-network
+    kubeconfig: "{{ lookup('env', 'KUBECONFIG_WEST') }}"
+  east:
+    name: east-cluster
+    network: east-network
+    kubeconfig: "{{ lookup('env', 'KUBECONFIG_EAST') }}"
+
+# Mesh configuration
+mesh_id: bookinfo-mesh
+mesh_namespace: istio-system
+smcp_name: basic
+smcp_mode: ClusterWide
+
+# Certificate parameters (certificates_ prefix for role convention)
+certificates_dir: "{{ playbook_dir }}/../files/certs"
+certificates_root_key_size: 4096
+certificates_intermediate_key_size: 4096
+certificates_validity_days: 3650
+certificates_org: Istio
+certificates_root_cn: Root CA
+certificates_intermediate_cn: Intermediate CA
+certificates_mesh_namespace: "{{ mesh_namespace }}"
+
+
+# Cloud provider: "aws" (uses hostname) or "generic" (uses IP)
+cloud_provider: aws
+
+# Demo application settings
+bookinfo_manifest_url: "https://raw.githubusercontent.com/maistra/istio/maistra-2.6/samples/bookinfo/platform/kube/bookinfo.yaml"
+sleep_manifest_url: "https://raw.githubusercontent.com/maistra/istio/maistra-2.6/samples/sleep/sleep.yaml"
+bookinfo_namespace: bookinfo
+sleep_namespace: sleep
+
+# Timeouts
+smcp_wait_retries: 30
+smcp_wait_delay: 10
+lb_wait_retries: 30
+lb_wait_delay: 10
+
+# Remote secrets
+token_duration: 48h

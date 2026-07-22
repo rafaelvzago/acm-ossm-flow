@@ -1,0 +1,6 @@
+---
+- name: "Phase 2: Mesh Control Plane Deployment"
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - mesh-control-plane
