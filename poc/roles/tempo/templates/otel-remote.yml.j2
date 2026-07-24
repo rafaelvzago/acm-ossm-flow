@@ -1,0 +1,66 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: {{ remote_collector_name }}
+  namespace: {{ mesh_namespace }}
+spec:
+  mode: deployment
+  replicas: 1
+  volumeMounts:
+  - name: server-certs
+    mountPath: /etc/otel/server
+    readOnly: true
+  - name: ca-cert
+    mountPath: /etc/otel/ca
+    readOnly: true
+  volumes:
+  - name: server-certs
+    secret:
+      secretName: {{ remote_collector_name }}-server-tls
+  - name: ca-cert
+    secret:
+      secretName: {{ remote_collector_name }}-ca
+  config:
+    receivers:
+      otlp:
+        protocols:
+          http:
+            endpoint: 0.0.0.0:4318
+            tls:
+              cert_file: /etc/otel/server/tls.crt
+              key_file: /etc/otel/server/tls.key
+              client_ca_file: /etc/otel/ca/tls.crt
+    processors:
+      batch: {}
+      resource:
+        attributes:
+        - key: receiving.cluster
+          action: upsert
+          value: {{ clusters.spoke.name }}
+        - key: source.cluster
+          action: upsert
+          value: {{ clusters.spoke_two.name }}
+    extensions:
+      bearertokenauth:
+        filename: /var/run/secrets/kubernetes.io/serviceaccount/token
+    exporters:
+      otlp_http/tempo:
+        auth:
+          authenticator: bearertokenauth
+        endpoint: https://tempo-{{ tempo_stack_name }}-gateway.{{ tempo_namespace }}.svc.cluster.local:8080/api/traces/v1/{{ tempo_tenant }}
+        headers:
+          X-Scope-OrgID: {{ tempo_tenant }}
+        tls:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+    service:
+      extensions:
+      - bearertokenauth
+      pipelines:
+        traces:
+          receivers:
+          - otlp
+          processors:
+          - resource
+          - batch
+          exporters:
+          - otlp_http/tempo

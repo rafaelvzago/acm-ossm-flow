@@ -1,95 +1,75 @@
 ---
-- name: Teardown OSSM Multi-Cluster POC
+# Cleanup opcional — NÃO roda em site.yml.
+# Remove demos, mesh CRs e recursos de observabilidade nos spokes.
+# ACM no hub é preservado por padrão (teardown_acm=false).
+
+- name: Teardown OSSM ACM multi-cluster resources
   hosts: localhost
   gather_facts: false
+  vars:
+    teardown_acm: false
+    confirm_teardown: false
+  pre_tasks:
+    - name: Require explicit confirmation
+      ansible.builtin.assert:
+        that: confirm_teardown | bool
+        fail_msg: >-
+          Passe -e confirm_teardown=true para apagar recursos.
+          Ex.: ansible-playbook playbooks/teardown.yml -e confirm_teardown=true
+
+    - name: Bootstrap
+      ansible.builtin.include_role:
+        name: bootstrap
+      vars:
+        require_spoke_two: true
+        require_istioctl: false
 
   tasks:
-    - name: Delete demo app namespaces
+    - name: Delete demo namespaces on both spokes
       kubernetes.core.k8s:
+        state: absent
+        kubeconfig: "{{ item.0 }}"
         kind: Namespace
         name: "{{ item.1 }}"
-        state: absent
-        kubeconfig: "{{ item.0.value.kubeconfig }}"
-      loop: >-
-        {{ clusters | dict2items |
-           product([bookinfo_namespace, sleep_namespace]) |
-           list }}
-      loop_control:
-        label: "{{ item.0.key }}/{{ item.1 }}"
+      loop: "{{ [clusters.spoke.kubeconfig, clusters.spoke_two.kubeconfig] | product(['ambient-demo', 'bookinfo', 'perses', 'tempo']) | list }}"
       failed_when: false
 
-    - name: Delete east-west gateway resources
+    - name: Delete Istio / ZTunnel / IstioCNI on both spokes
       kubernetes.core.k8s:
         state: absent
-        definition:
-          apiVersion: "{{ resource.api }}"
-          kind: "{{ resource.kind }}"
-          metadata:
-            name: istio-eastwestgateway
-            namespace: "{{ mesh_namespace }}"
-        kubeconfig: "{{ cluster.value.kubeconfig }}"
-      loop: >-
-        {{ clusters | dict2items | product([
-          {'api': 'networking.istio.io/v1beta1', 'kind': 'Gateway'},
-          {'api': 'apps/v1', 'kind': 'Deployment'},
-          {'api': 'v1', 'kind': 'Service'}
-        ]) | list }}
-      loop_control:
-        label: "{{ item.0.key }}/{{ item.1.kind }}"
-      vars:
-        cluster: "{{ item.0 }}"
-        resource: "{{ item.1 }}"
+        kubeconfig: "{{ item.0 }}"
+        api_version: sailoperator.io/v1
+        kind: "{{ item.1 }}"
+        name: default
+      loop: "{{ [clusters.spoke.kubeconfig, clusters.spoke_two.kubeconfig] | product(['Istio', 'ZTunnel', 'IstioCNI']) | list }}"
       failed_when: false
 
-    - name: Delete SMCP
+    - name: Delete Kiali CRs
       kubernetes.core.k8s:
-        api_version: maistra.io/v2
-        kind: ServiceMeshControlPlane
-        name: "{{ smcp_name }}"
-        namespace: "{{ mesh_namespace }}"
         state: absent
-        kubeconfig: "{{ item.value.kubeconfig }}"
-      loop: "{{ clusters | dict2items }}"
-      loop_control:
-        label: "{{ item.key }}"
-      failed_when: false
-
-    - name: Wait for SMCP deletion
-      kubernetes.core.k8s_info:
-        api_version: maistra.io/v2
-        kind: ServiceMeshControlPlane
-        name: "{{ smcp_name }}"
-        namespace: "{{ mesh_namespace }}"
-        kubeconfig: "{{ item.value.kubeconfig }}"
-      register: smcp_gone
-      until: smcp_gone.resources | length == 0
-      retries: 30
-      delay: 10
-      loop: "{{ clusters | dict2items }}"
-      loop_control:
-        label: "{{ item.key }}"
-      failed_when: false
-
-    - name: Delete istio-system namespace
-      kubernetes.core.k8s:
-        kind: Namespace
-        name: "{{ mesh_namespace }}"
-        state: absent
-        kubeconfig: "{{ item.value.kubeconfig }}"
-      loop: "{{ clusters | dict2items }}"
-      loop_control:
-        label: "{{ item.key }}"
-      failed_when: false
-
-    - name: Clean up local certificate files
-      ansible.builtin.file:
-        path: "{{ certificates_dir }}"
-        state: absent
-
-    - name: Clean up downloaded manifests
-      ansible.builtin.file:
-        path: "/tmp/{{ item }}.yaml"
-        state: absent
+        kubeconfig: "{{ item }}"
+        api_version: kiali.io/v1alpha1
+        kind: Kiali
+        name: kiali
+        namespace: "{{ kiali_cr_ns }}"
       loop:
-        - bookinfo
-        - sleep
+        - "{{ clusters.spoke.kubeconfig }}"
+        - "{{ clusters.spoke_two.kubeconfig }}"
+      failed_when: false
+
+    - name: Delete MultiClusterObservability when requested
+      when: teardown_acm | bool
+      kubernetes.core.k8s:
+        state: absent
+        kubeconfig: "{{ clusters.hub.kubeconfig }}"
+        api_version: observability.open-cluster-management.io/v1beta2
+        kind: MultiClusterObservability
+        name: observability
+      failed_when: false
+
+    - name: Reminder
+      ansible.builtin.debug:
+        msg: >-
+          Teardown parcial concluído. Operadores OLM e ManagedClusters podem
+          permanecer. Use teardown_acm=true para remover MCO. Certificados
+          locais em files/certs/ não são apagados automaticamente.

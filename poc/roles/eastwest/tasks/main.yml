@@ -1,0 +1,74 @@
+---
+- name: Deploy East-West gateways on both spokes
+  ansible.builtin.include_tasks: per_cluster.yml
+  loop:
+    - "{{ clusters.spoke }}"
+    - "{{ clusters.spoke_two }}"
+  loop_control:
+    loop_var: ew_cluster
+
+- name: Wait for spoke HBONE LB address
+  ansible.builtin.include_tasks: wait_lb.yml
+  vars:
+    lb_kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+    lb_service: istio-eastwestgateway
+    lb_fact_name: spoke_hbone_addr
+
+- name: Wait for spoke sidecar LB address
+  ansible.builtin.include_tasks: wait_lb.yml
+  vars:
+    lb_kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+    lb_service: istio-eastwestgateway-sidecar-istio
+    lb_fact_name: spoke_sidecar_addr
+
+- name: Wait for spoke-two HBONE LB address
+  ansible.builtin.include_tasks: wait_lb.yml
+  vars:
+    lb_kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+    lb_service: istio-eastwestgateway
+    lb_fact_name: spoke_two_hbone_addr
+
+- name: Wait for spoke-two sidecar LB address
+  ansible.builtin.include_tasks: wait_lb.yml
+  vars:
+    lb_kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+    lb_service: istio-eastwestgateway-sidecar-istio
+    lb_fact_name: spoke_two_sidecar_addr
+
+- name: Show discovered East-West addresses (runtime only)
+  ansible.builtin.debug:
+    msg:
+      - "Spoke HBONE={{ spoke_hbone_addr }} Sidecar={{ spoke_sidecar_addr }}"
+      - "Spoke-two HBONE={{ spoke_two_hbone_addr }} Sidecar={{ spoke_two_sidecar_addr }}"
+
+- name: Patch meshNetworks on both Istio control planes
+  ansible.builtin.command: >
+    oc --kubeconfig={{ item }}
+    patch istio default --type=merge -p
+    {
+      "spec": {
+        "values": {
+          "global": {
+            "meshNetworks": {
+              "{{ clusters.spoke.network }}": {
+                "endpoints": [{"fromRegistry": "{{ clusters.spoke.name }}"}],
+                "gateways": [
+                  {"address": "{{ spoke_hbone_addr }}", "port": 15008},
+                  {"address": "{{ spoke_sidecar_addr }}", "port": 15443}
+                ]
+              },
+              "{{ clusters.spoke_two.network }}": {
+                "endpoints": [{"fromRegistry": "{{ clusters.spoke_two.name }}"}],
+                "gateways": [
+                  {"address": "{{ spoke_two_hbone_addr }}", "port": 15008},
+                  {"address": "{{ spoke_two_sidecar_addr }}", "port": 15443}
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  loop:
+    - "{{ clusters.spoke.kubeconfig }}"
+    - "{{ clusters.spoke_two.kubeconfig }}"

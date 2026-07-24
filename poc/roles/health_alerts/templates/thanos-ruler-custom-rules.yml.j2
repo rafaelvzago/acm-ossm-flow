@@ -1,0 +1,40 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: thanos-ruler-custom-rules
+  namespace: {{ acm_observability_namespace }}
+data:
+  custom_rules.yaml: |
+    groups:
+    - name: kiali.health.hub.alerts
+      rules:
+      - alert: KialiHubHealthFailure
+        expr: |
+          max by (cluster, exported_namespace, health_type, name) (
+            kiali_health_status{health_type=~"app|service|workload"}
+          ) == 3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Hub sees Kiali Failure health status
+      - alert: KialiHubHealthDegraded
+        expr: |
+          max by (cluster, exported_namespace, health_type, name) (
+            kiali_health_status{health_type=~"app|service|workload"}
+          ) == 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Hub sees Kiali Degraded health status
+      - alert: KialiHubNamespaceHealthFailure
+        expr: |
+          max by (cluster, exported_namespace, name) (
+            kiali_health_status{health_type="namespace"}
+          ) == 3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Hub sees Kiali namespace Failure health status

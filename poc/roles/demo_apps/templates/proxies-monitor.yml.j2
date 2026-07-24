@@ -1,0 +1,35 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: istio-proxies-monitor
+  namespace: {{ monitor_namespace }}
+spec:
+  selector:
+    matchExpressions:
+    - key: istio-prometheus-ignore
+      operator: DoesNotExist
+  podMetricsEndpoints:
+  - path: /stats/prometheus
+    interval: 30s
+    relabelings:
+    - action: keep
+      regex: istio-proxy
+      sourceLabels:
+      - __meta_kubernetes_pod_container_name
+    - action: replace
+      sourceLabels:
+      - __meta_kubernetes_namespace
+      targetLabel: namespace
+    - action: replace
+      replacement: {{ mesh_id }}
+      targetLabel: mesh_id
+{% if monitor_namespace == 'bookinfo' %}
+    - action: replace
+      sourceLabels:
+      - __meta_kubernetes_pod_label_app
+      targetLabel: app
+    - action: replace
+      sourceLabels:
+      - __meta_kubernetes_pod_label_version
+      targetLabel: version
+{% endif %}

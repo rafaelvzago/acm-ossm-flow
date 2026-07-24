@@ -1,0 +1,19 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kiali-health-status-not-ready
+  namespace: {{ kiali_ns }}
+  labels:
+    openshift.io/prometheus-rule-evaluation-scope: leaf-prometheus
+spec:
+  groups:
+  - name: kiali.health.not-ready
+    rules:
+    - alert: KialiWorkloadNotReady
+      expr: |
+        kiali:health_status:max{health_type="workload"} == 1
+      for: 15m
+      labels:
+        severity: warning
+      annotations:
+        summary: "{% raw %}Workload {{ $labels.name }} in {{ $labels.exported_namespace }} is Not Ready{% endraw %}"

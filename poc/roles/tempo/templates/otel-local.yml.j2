@@ -1,0 +1,47 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel
+  namespace: {{ mesh_namespace }}
+spec:
+  mode: deployment
+  replicas: 1
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    extensions:
+      bearertokenauth:
+        filename: /var/run/secrets/kubernetes.io/serviceaccount/token
+    processors:
+      batch: {}
+      resource:
+        attributes:
+        - key: k8s.cluster.name
+          action: upsert
+          value: {{ clusters.spoke.name }}
+    exporters:
+      otlp_http/tempo:
+        auth:
+          authenticator: bearertokenauth
+        endpoint: https://tempo-{{ tempo_stack_name }}-gateway.{{ tempo_namespace }}.svc.cluster.local:8080/api/traces/v1/{{ tempo_tenant }}
+        headers:
+          X-Scope-OrgID: {{ tempo_tenant }}
+        tls:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt
+    service:
+      extensions:
+      - bearertokenauth
+      pipelines:
+        traces:
+          receivers:
+          - otlp
+          processors:
+          - resource
+          - batch
+          exporters:
+          - otlp_http/tempo

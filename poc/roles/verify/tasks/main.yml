@@ -1,71 +1,82 @@
 ---
-- name: Verify SMCP is Ready on both clusters
+- name: Verify ManagedClusters on hub
   kubernetes.core.k8s_info:
-    api_version: maistra.io/v2
-    kind: ServiceMeshControlPlane
-    name: basic
-    namespace: "{{ mesh_namespace }}"
-    kubeconfig: "{{ item.value.kubeconfig }}"
-  register: verify_smcp_check
-  failed_when: >-
-    verify_smcp_check.resources | length == 0 or
-    verify_smcp_check.resources[0].status.conditions | default([]) |
-    selectattr('type', 'equalto', 'Ready') |
-    selectattr('status', 'equalto', 'True') | list | length == 0
-  loop: "{{ clusters | dict2items }}"
-  loop_control:
-    label: "{{ item.key }}"
+    api_version: cluster.open-cluster-management.io/v1
+    kind: ManagedCluster
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+  register: managed
 
-- name: Verify east-west gateway pods are Running
-  kubernetes.core.k8s_info:
-    api_version: v1
-    kind: Pod
-    namespace: "{{ mesh_namespace }}"
-    label_selectors:
-      - "istio=eastwestgateway"
-    kubeconfig: "{{ item.value.kubeconfig }}"
-  register: verify_gw_pods
-  failed_when: >-
-    verify_gw_pods.resources | length == 0 or
-    verify_gw_pods.resources
-    | selectattr('status.phase', 'equalto', 'Running')
-    | list | length == 0
-  loop: "{{ clusters | dict2items }}"
-  loop_control:
-    label: "{{ item.key }}"
-
-- name: Get sleep pod name on east cluster
-  kubernetes.core.k8s_info:
-    api_version: v1
-    kind: Pod
-    namespace: "{{ sleep_namespace }}"
-    label_selectors:
-      - "app=sleep"
-    kubeconfig: "{{ clusters.east.kubeconfig }}"
-  register: verify_sleep_pods
-  failed_when: verify_sleep_pods.resources | length == 0
-
-- name: Set sleep pod name
-  ansible.builtin.set_fact:
-    verify_sleep_pod: "{{ verify_sleep_pods.resources[0].metadata.name }}"
-
-- name: Test cross-cluster connectivity (east -> west productpage)
-  ansible.builtin.command:
-    cmd: >-
-      oc exec {{ verify_sleep_pod }}
-      -n {{ sleep_namespace }}
-      -c sleep
-      --kubeconfig={{ clusters.east.kubeconfig }}
-      -- curl -s -o /dev/null -w '%{http_code}'
-      productpage.{{ bookinfo_namespace }}:9080/productpage
-  register: verify_connectivity
-  changed_when: false
-  failed_when: verify_connectivity.stdout != '200'
-
-- name: Verification summary
+- name: Show ManagedClusters
   ansible.builtin.debug:
-    msg:
-      - "=== OSSM Multi-Cluster Verification ==="
-      - "SMCP Ready: PASSED (both clusters)"
-      - "East-West Gateways: PASSED (both clusters)"
-      - "Cross-Cluster Connectivity: PASSED (HTTP {{ verify_connectivity.stdout }})"
+    msg: "{{ managed.resources | map(attribute='metadata.name') | list }}"
+
+- name: Verify Istio on spoke
+  kubernetes.core.k8s_info:
+    api_version: sailoperator.io/v1
+    kind: Istio
+    name: default
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+  register: istio_spoke
+
+- name: Assert spoke Istio present
+  ansible.builtin.assert:
+    that: istio_spoke.resources | length > 0
+    fail_msg: Istio CR ausente no spoke.
+
+- name: Verify Istio on spoke-two (optional)
+  when: clusters.spoke_two.kubeconfig | default('') | length > 0
+  block:
+    - name: Get spoke-two Istio
+      kubernetes.core.k8s_info:
+        api_version: sailoperator.io/v1
+        kind: Istio
+        name: default
+        kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+      register: istio_spoke_two
+      failed_when: false
+
+    - name: Show spoke-two Istio status
+      ansible.builtin.debug:
+        msg: "spoke-two Istio resources={{ istio_spoke_two.resources | default([]) | length }}"
+
+- name: Verify Kiali external services flags
+  ansible.builtin.command: >
+    oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+    get kiali kiali -n {{ kiali_cr_ns }}
+    -o jsonpath={.spec.external_services.prometheus.url}{' '}{.spec.external_services.perses.enabled}{' '}{.spec.external_services.tracing.enabled}{' '}{.spec.server.observability.metrics.health_status.enabled}
+  register: kiali_flags
+  changed_when: false
+  failed_when: false
+
+- name: Show Kiali flags
+  ansible.builtin.debug:
+    msg: "Kiali flags: {{ kiali_flags.stdout | default('(indisponível)') }}"
+
+- name: Verify East-West gateways if multi-primary
+  when: verify_multi_primary | default(false) | bool
+  block:
+    - name: List gateways on spoke
+      kubernetes.core.k8s_info:
+        api_version: gateway.networking.k8s.io/v1
+        kind: Gateway
+        namespace: "{{ mesh_namespace }}"
+        kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+      register: gws
+
+    - name: Show gateway names
+      ansible.builtin.debug:
+        msg: "{{ gws.resources | map(attribute='metadata.name') | list }}"
+
+- name: Verify Perses dashboards
+  when: verify_perses | default(false) | bool
+  kubernetes.core.k8s_info:
+    api_version: perses.dev/v1alpha2
+    kind: PersesDashboard
+    namespace: "{{ perses_namespace }}"
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+  register: dashboards
+
+- name: Show Perses dashboards
+  when: verify_perses | default(false) | bool
+  ansible.builtin.debug:
+    msg: "{{ dashboards.resources | map(attribute='metadata.name') | list }}"

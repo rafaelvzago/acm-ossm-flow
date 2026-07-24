@@ -1,0 +1,187 @@
+---
+- name: Apply Cluster Observability Operator Subscription
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: cluster-observability-operator
+        namespace: openshift-operators
+      spec:
+        channel: stable
+        installPlanApproval: Automatic
+        name: cluster-observability-operator
+        source: redhat-operators
+        sourceNamespace: openshift-marketplace
+
+- name: Wait for Perses CRD
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: perses.perses.dev
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+  register: perses_crd
+  until: perses_crd.resources | length > 0
+  retries: "{{ wait_retries }}"
+  delay: "{{ wait_delay }}"
+
+- name: Apply Monitoring UIPlugin with Perses
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+    definition:
+      apiVersion: observability.openshift.io/v1alpha1
+      kind: UIPlugin
+      metadata:
+        name: monitoring
+      spec:
+        type: Monitoring
+        monitoring:
+          perses:
+            enabled: true
+
+- name: Wait for Perses pod
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: openshift-operators
+    label_selectors:
+      - app.kubernetes.io/name=perses
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+  register: perses_pods
+  until: >
+    perses_pods.resources | length > 0 and
+    (
+      perses_pods.resources
+      | map(attribute='status.phase')
+      | select('equalto', 'Running')
+      | list
+      | length
+    ) > 0
+  retries: 60
+  delay: 10
+
+- name: Discover Observatorium URL from hub
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: observatorium-api
+    namespace: "{{ acm_observability_namespace }}"
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+  register: obs_route
+
+- name: Set observatorium_url
+  ansible.builtin.set_fact:
+    observatorium_url: "https://{{ obs_route.resources[0].spec.host }}/api/metrics/v1/default"
+
+- name: Ensure hub server CA extracted for Perses
+  ansible.builtin.shell: |
+    set -euo pipefail
+    OUT="{{ playbook_dir }}/../files/generated/obs"
+    mkdir -p "$OUT"
+    if [ ! -s "$OUT/obs-server-ca.crt" ]; then
+      oc --kubeconfig={{ clusters.hub.kubeconfig }} get secret observability-server-ca-certs \
+        -n {{ acm_observability_namespace }} \
+        -o jsonpath='{.data.ca\.crt}' | base64 -d > "$OUT/obs-server-ca.crt" \
+      || oc --kubeconfig={{ clusters.hub.kubeconfig }} get secret observability-server-ca-certs \
+        -n {{ acm_observability_namespace }} \
+        -o jsonpath='{.data.tls\.crt}' | base64 -d > "$OUT/obs-server-ca.crt"
+    fi
+  args:
+    executable: /bin/bash
+
+- name: Create perses-acm-server-ca ConfigMap
+  ansible.builtin.command: >
+    oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+    create configmap perses-acm-server-ca
+    -n openshift-operators
+    --from-file=ca.crt={{ playbook_dir }}/../files/generated/obs/obs-server-ca.crt
+    --dry-run=client -o yaml
+  register: perses_ca_cm
+  changed_when: false
+
+- name: Apply perses-acm-server-ca
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+    definition: "{{ perses_ca_cm.stdout | from_yaml }}"
+
+- name: Copy acm-observability-certs to openshift-operators as perses-acm-client-certs
+  ansible.builtin.shell: |
+    set -euo pipefail
+    oc --kubeconfig={{ clusters.spoke.kubeconfig }} get secret acm-observability-certs \
+      -n {{ kiali_ns }} -o json \
+    | jq 'del(.metadata.namespace, .metadata.resourceVersion, .metadata.uid,
+              .metadata.creationTimestamp, .metadata.ownerReferences, .metadata.managedFields)
+          | .metadata.namespace = "openshift-operators"
+          | .metadata.name = "perses-acm-client-certs"' \
+    | oc --kubeconfig={{ clusters.spoke.kubeconfig }} apply -f -
+  args:
+    executable: /bin/bash
+  no_log: true
+
+- name: Patch Perses CR to mount ACM server CA
+  ansible.builtin.command: >
+    oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+    patch perses perses -n openshift-operators --type=merge -p
+    {"spec":{"volumes":[{"name":"acm-server-ca","configMap":{"name":"perses-acm-server-ca"}}],"volumeMounts":[{"name":"acm-server-ca","mountPath":"/etc/ssl/certs/acm-thanos-ca.crt","subPath":"ca.crt","readOnly":true}]}}
+
+- name: Ensure perses namespace
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ perses_namespace }}"
+
+- name: Apply PersesDatasource acm-thanos
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+    definition: "{{ lookup('template', 'datasource.yml.j2') | from_yaml }}"
+
+- name: Apply Istio Perses dashboards
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+    definition: "{{ lookup('file', role_path + '/files/' + item) | from_yaml }}"
+  loop:
+    - istio-mesh-overview.yml
+    - istio-workload-dashboard.yml
+    - istio-ztunnel-dashboard.yml
+
+- name: Discover OpenShift console URL on spoke
+  kubernetes.core.k8s_info:
+    api_version: route.openshift.io/v1
+    kind: Route
+    name: console
+    namespace: openshift-console
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+  register: console_route
+
+- name: Merge-safe Kiali Perses patch
+  ansible.builtin.shell: |
+    set -euo pipefail
+    CONSOLE_URL="https://{{ console_route.resources[0].spec.host }}"
+    oc --kubeconfig={{ clusters.spoke.kubeconfig }} get kiali kiali -n {{ kiali_cr_ns }} -o json \
+    | jq --arg url "$CONSOLE_URL" '
+      .spec.external_services.perses = {
+        "enabled": true,
+        "url_format": "openshift",
+        "external_url": $url,
+        "health_check_url": "https://perses.openshift-operators.svc.cluster.local:8080/api/v1/health",
+        "project": "perses",
+        "dashboards": [
+          {"name": "Istio Mesh Overview"},
+          {"name": "Istio Workload Dashboard",
+           "variables": {"namespace": "namespace", "workload": "workload"}},
+          {"name": "Istio Ztunnel Dashboard"}
+        ]
+      }
+    ' | oc --kubeconfig={{ clusters.spoke.kubeconfig }} apply -f -
+  args:
+    executable: /bin/bash

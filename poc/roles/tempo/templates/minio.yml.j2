@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-pv-claim
+  namespace: {{ tempo_namespace }}
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 256Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: {{ tempo_namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: minio
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      volumes:
+      - name: storage
+        persistentVolumeClaim:
+          claimName: minio-pv-claim
+      initContainers:
+      - name: create-buckets
+        image: mirror.gcr.io/library/busybox:1.28
+        command: ["sh", "-c", "mkdir -p /storage/tempo-data"]
+        volumeMounts:
+        - name: storage
+          mountPath: "/storage"
+      containers:
+      - name: minio
+        image: mirror.gcr.io/minio/minio:latest
+        args:
+        - server
+        - /storage
+        - --console-address
+        - ":9001"
+        env:
+        - name: MINIO_ROOT_USER
+          value: "{{ minio_access_key }}"
+        - name: MINIO_ROOT_PASSWORD
+          value: "{{ minio_secret_key }}"
+        ports:
+        - containerPort: 9000
+        - containerPort: 9001
+        volumeMounts:
+        - name: storage
+          mountPath: "/storage"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: {{ tempo_namespace }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9000
+    targetPort: 9000
+    protocol: TCP
+    name: api
+  - port: 9001
+    targetPort: 9001
+    protocol: TCP
+    name: console
+  selector:
+    app: minio

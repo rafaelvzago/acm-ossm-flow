@@ -1,74 +1,18 @@
 ---
-- name: OSSM 2.6 Multi-Primary Multi-Cluster Setup
-  hosts: localhost
-  gather_facts: false
+- name: Site — Parts 1–4 (OSSM ACM multi-cluster completo)
+  import_playbook: 01-hub-spoke.yml
 
-  pre_tasks:
-    - name: Validate cluster auth environment variables
-      ansible.builtin.assert:
-        that:
-          - lookup('env', 'KUBECONFIG_WEST') | length > 0
-          - lookup('env', 'KUBECONFIG_EAST') | length > 0
-        fail_msg: >-
-          Set KUBECONFIG_WEST and KUBECONFIG_EAST environment variables
-          pointing to kubeconfig files. See .env.example for details.
+- name: Site — multi-primary
+  import_playbook: 02-multi-primary.yml
 
-    - name: Verify cluster connectivity
-      kubernetes.core.k8s_info:
-        kind: Namespace
-        name: default
-        kubeconfig: "{{ item.value.kubeconfig }}"
-      loop: "{{ clusters | dict2items }}"
-      loop_control:
-        label: "{{ item.key }}"
+- name: Site — Perses + Tempo
+  import_playbook: 03-perses-tempo.yml
 
-    - name: Check ServiceMesh operator is installed
-      kubernetes.core.k8s_info:
-        api_version: operators.coreos.com/v1alpha1
-        kind: Subscription
-        namespace: openshift-operators
-        kubeconfig: "{{ item.value.kubeconfig }}"
-        label_selectors:
-          - "operators.coreos.com/servicemeshoperator.openshift-operators"
-      register: sm_operator
-      failed_when: sm_operator.resources | length == 0
-      loop: "{{ clusters | dict2items }}"
-      loop_control:
-        label: "{{ item.key }}"
+- name: Site — health alerts
+  import_playbook: 04-health-alerts.yml
 
-  tasks:
-    - name: "Phase 1: Generate certificates"
-      ansible.builtin.include_role:
-        name: certificates
-
-    - name: "Phase 2: Deploy mesh control plane"
-      ansible.builtin.include_role:
-        name: mesh-control-plane
-
-    - name: "Phase 3: Deploy east-west gateways"
-      ansible.builtin.include_role:
-        name: eastwest-gateway
-
-    - name: "Phase 4: Create remote secrets"
-      ansible.builtin.include_role:
-        name: remote-secrets
-
-    - name: "Phase 5a: Deploy initial demo apps"
-      ansible.builtin.include_role:
-        name: demo-apps
-      vars:
-        deploy_phase: initial
-
-    - name: "Phase 5b: Update mesh networks with real gateway addresses"
-      ansible.builtin.include_role:
-        name: mesh-networks
-
-    - name: "Phase 5c: Deploy remaining demo apps"
-      ansible.builtin.include_role:
-        name: demo-apps
-      vars:
-        deploy_phase: full
-
-    - name: "Phase 6: Verify cross-cluster connectivity"
-      ansible.builtin.include_role:
-        name: verify
+- name: Site — verify
+  import_playbook: verify.yml
+  vars:
+    verify_multi_primary: true
+    verify_perses: true

@@ -1,46 +1,65 @@
 ---
-# Cluster authentication (kubeconfig files via environment variables)
+# Inventário sanitizado — sem APIs, LBs, Routes ou senhas reais.
+# Endereços de cluster: faça oc login e aponte KUBECONFIG_* (ver .env.example).
+
 clusters:
-  west:
-    name: west-cluster
-    network: west-network
-    kubeconfig: "{{ lookup('env', 'KUBECONFIG_WEST') }}"
-  east:
-    name: east-cluster
-    network: east-network
-    kubeconfig: "{{ lookup('env', 'KUBECONFIG_EAST') }}"
+  hub:
+    context_name: ossm-kiali-hub
+    kubeconfig: "{{ lookup('env', 'KUBECONFIG_HUB') }}"
+  spoke:
+    name: spoke
+    network: network1
+    context_name: ossm-kiali-spoke
+    kubeconfig: "{{ lookup('env', 'KUBECONFIG_SPOKE') }}"
+  spoke_two:
+    name: spoke-two
+    network: network2
+    context_name: ossm-kiali-spoke-two
+    kubeconfig: "{{ lookup('env', 'KUBECONFIG_SPOKE_TWO') }}"
 
-# Mesh configuration
-mesh_id: bookinfo-mesh
+# Mesh / OSSM3
+istio_version: "1.30.1"
+mesh_id: mesh1
 mesh_namespace: istio-system
-smcp_name: basic
-smcp_mode: ClusterWide
+ztunnel_namespace: ztunnel
+istio_cni_namespace: istio-cni
 
-# Certificate parameters (certificates_ prefix for role convention)
+# ACM
+acm_namespace: open-cluster-management
+acm_observability_namespace: open-cluster-management-observability
+# Canal: deixe vazio para descobrir o mais recente no packagemanifest
+acm_channel: ""
+
+# MinIO in-cluster (demo ACM Thanos + Tempo) — NÃO é credencial de admin do cluster
+minio_access_key: minio
+minio_secret_key: minio123
+
+# LB: "aws" prefer hostname; "generic" prefer IP (fallback automático se um faltar)
+cloud_provider: generic
+
+# Certificados (gerados localmente, gitignored)
 certificates_dir: "{{ playbook_dir }}/../files/certs"
-certificates_root_key_size: 4096
-certificates_intermediate_key_size: 4096
 certificates_validity_days: 3650
-certificates_org: Istio
-certificates_root_cn: Root CA
-certificates_intermediate_cn: Intermediate CA
-certificates_mesh_namespace: "{{ mesh_namespace }}"
 
+# Tempo / Perses
+tempo_namespace: tempo
+tempo_stack_name: istio
+tempo_tenant: "{{ mesh_id }}"
+tempo_tenant_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+perses_namespace: perses
+otel_mtls_dir: "{{ playbook_dir }}/../files/generated/otel-mtls"
+# Definido em runtime na role tempo a partir de clusters.spoke_two.name
 
-# Cloud provider: "aws" (uses hostname) or "generic" (uses IP)
-cloud_provider: aws
-
-# Demo application settings
-bookinfo_manifest_url: "https://raw.githubusercontent.com/maistra/istio/maistra-2.6/samples/bookinfo/platform/kube/bookinfo.yaml"
-sleep_manifest_url: "https://raw.githubusercontent.com/maistra/istio/maistra-2.6/samples/sleep/sleep.yaml"
-bookinfo_namespace: bookinfo
-sleep_namespace: sleep
+# Kiali
+kiali_ns: istio-system
+kiali_cr_ns: istio-system
+kiali_instance_name: kiali
 
 # Timeouts
-smcp_wait_retries: 30
-smcp_wait_delay: 10
-lb_wait_retries: 30
+wait_retries: 60
+wait_delay: 10
+lb_wait_retries: 36
 lb_wait_delay: 10
 
-# Remote secrets
-token_duration: 48h
+# Tools
+istioctl_bin: istioctl

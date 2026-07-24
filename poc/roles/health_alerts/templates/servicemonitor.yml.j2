@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kiali
+  namespace: {{ kiali_ns }}
+spec:
+  endpoints:
+  - interval: 30s
+    port: tcp-metrics
+    scheme: https
+    tlsConfig:
+      ca:
+        configMap:
+          key: service-ca.crt
+          name: kiali-cabundle-openshift
+      serverName: kiali.{{ kiali_ns }}.svc
+  namespaceSelector:
+    matchNames:
+    - {{ kiali_ns }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kiali

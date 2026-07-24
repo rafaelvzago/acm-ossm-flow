@@ -1,0 +1,4 @@
+---
+ossm3_cluster_key: spoke
+# When true, also patch multiCluster/network/AMBIENT_ENABLE_MULTI_NETWORK
+ossm3_multi_primary: false

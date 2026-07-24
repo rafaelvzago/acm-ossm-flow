@@ -1,0 +1,202 @@
+---
+- name: Discover ACM channel from packagemanifest
+  kubernetes.core.k8s_info:
+    api_version: packages.operators.coreos.com/v1
+    kind: PackageManifest
+    name: advanced-cluster-management
+    namespace: openshift-marketplace
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+  register: acm_pkg
+  when: acm_channel | length == 0
+
+- name: Set ACM channel fact
+  ansible.builtin.set_fact:
+    acm_channel_effective: >-
+      {{
+        acm_channel
+        if (acm_channel | length > 0)
+        else (
+          acm_pkg.resources[0].status.channels
+          | map(attribute='name')
+          | list
+          | sort
+          | last
+        )
+      }}
+
+- name: Ensure open-cluster-management namespace
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ acm_namespace }}"
+
+- name: Apply ACM OperatorGroup
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition:
+      apiVersion: operators.coreos.com/v1
+      kind: OperatorGroup
+      metadata:
+        name: open-cluster-management
+        namespace: "{{ acm_namespace }}"
+      spec:
+        targetNamespaces:
+          - "{{ acm_namespace }}"
+
+- name: Apply ACM Subscription
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: acm-operator-subscription
+        namespace: "{{ acm_namespace }}"
+      spec:
+        sourceNamespace: openshift-marketplace
+        source: redhat-operators
+        channel: "{{ acm_channel_effective }}"
+        installPlanApproval: Automatic
+        name: advanced-cluster-management
+
+- name: Wait for MultiClusterHub CRD
+  kubernetes.core.k8s_info:
+    api_version: apiextensions.k8s.io/v1
+    kind: CustomResourceDefinition
+    name: multiclusterhubs.operator.open-cluster-management.io
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+  register: mch_crd
+  until: mch_crd.resources | length > 0
+  retries: "{{ wait_retries }}"
+  delay: "{{ wait_delay }}"
+
+- name: Apply MultiClusterHub
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition:
+      apiVersion: operator.open-cluster-management.io/v1
+      kind: MultiClusterHub
+      metadata:
+        name: multiclusterhub
+        namespace: "{{ acm_namespace }}"
+      spec: {}
+
+- name: Wait for MultiClusterHub Running
+  kubernetes.core.k8s_info:
+    api_version: operator.open-cluster-management.io/v1
+    kind: MultiClusterHub
+    name: multiclusterhub
+    namespace: "{{ acm_namespace }}"
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+  register: mch
+  until: >
+    mch.resources | length > 0 and
+    mch.resources[0].status.phase | default('') == 'Running'
+  retries: 90
+  delay: 20
+
+- name: Ensure observability namespace
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ acm_observability_namespace }}"
+
+- name: Deploy MinIO for Thanos object storage
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition: "{{ lookup('template', 'minio.yml.j2') | from_yaml_all | list }}"
+
+- name: Wait for MinIO deployment
+  kubernetes.core.k8s_info:
+    api_version: apps/v1
+    kind: Deployment
+    name: minio
+    namespace: "{{ acm_observability_namespace }}"
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    wait: true
+    wait_condition:
+      type: Available
+      status: "True"
+    wait_timeout: 300
+
+- name: Ensure thanos bucket directory on MinIO
+  ansible.builtin.command: >
+    oc --kubeconfig={{ clusters.hub.kubeconfig }}
+    exec -n {{ acm_observability_namespace }}
+    deploy/minio -- mkdir -p /data/thanos
+  changed_when: false
+
+- name: Apply Thanos object storage secret
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: thanos-object-storage
+        namespace: "{{ acm_observability_namespace }}"
+      type: Opaque
+      stringData:
+        thanos.yaml: |
+          type: s3
+          config:
+            bucket: thanos
+            endpoint: minio.{{ acm_observability_namespace }}.svc:9000
+            insecure: true
+            access_key: {{ minio_access_key }}
+            secret_key: {{ minio_secret_key }}
+
+- name: Apply MultiClusterObservability
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition: "{{ lookup('template', 'mco.yml.j2') | from_yaml }}"
+
+- name: Wait for MultiClusterObservability Ready
+  kubernetes.core.k8s_info:
+    api_version: observability.open-cluster-management.io/v1beta2
+    kind: MultiClusterObservability
+    name: observability
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+  register: mco
+  until: >
+    mco.resources | length > 0 and
+    (
+      mco.resources[0].status.conditions
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list
+      | length
+    ) > 0
+  retries: 90
+  delay: 20
+
+- name: Apply Istio metrics allowlist ConfigMap
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: observability-metrics-custom-allowlist
+        namespace: "{{ acm_observability_namespace }}"
+      data:
+        uwl_metrics_list.yaml: |
+          names:
+          {% for m in acm_hub_istio_metrics %}
+            - {{ m }}
+          {% endfor %}

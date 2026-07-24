@@ -1,0 +1,32 @@
+apiVersion: kiali.io/v1alpha1
+kind: Kiali
+metadata:
+  name: kiali
+  namespace: {{ kiali_cr_ns }}
+spec:
+  auth:
+    strategy: openshift
+    openshift:
+      insecure_skip_verify_tls: true
+  deployment:
+    cluster_wide_access: true
+    instance_name: {{ kiali_instance_name }}
+    namespace: {{ kiali_ns }}
+    replicas: 1
+  kubernetes_config:
+    cluster_name: {{ clusters.spoke.name }}
+  external_services:
+    grafana:
+      enabled: false
+    prometheus:
+      auth:
+        cert_file: secret:acm-observability-certs:tls.crt
+        key_file: secret:acm-observability-certs:tls.key
+        type: none
+        use_kiali_token: false
+      thanos_proxy:
+        enabled: true
+        retention_period: "14d"
+        scrape_interval: "5m"
+      url: "{{ observatorium_url }}"
+  version: default

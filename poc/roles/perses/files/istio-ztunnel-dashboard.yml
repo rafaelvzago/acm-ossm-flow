@@ -1,0 +1,71 @@
+apiVersion: perses.dev/v1alpha2
+kind: PersesDashboard
+metadata:
+  name: istio-ztunnel-dashboard
+  namespace: perses
+spec:
+  config:
+    display:
+      name: "Istio Ztunnel Dashboard"
+    duration: 30m
+    layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: "Ambient L4 Traffic"
+        items:
+        - content:
+            $ref: '#/spec/panels/tcp_connections_opened'
+          height: 8
+          width: 12
+          x: 0
+          "y": 0
+        - content:
+            $ref: '#/spec/panels/tcp_bytes'
+          height: 8
+          width: 12
+          x: 12
+          "y": 0
+    panels:
+      tcp_connections_opened:
+        kind: Panel
+        spec:
+          display:
+            name: "TCP Connections Opened"
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: acm-thanos
+                  query: sum(rate(istio_tcp_connections_opened_total[10m])) by (destination_workload)
+      tcp_bytes:
+        kind: Panel
+        spec:
+          display:
+            name: "TCP Throughput (bytes/s)"
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: acm-thanos
+                  query: sum(rate(istio_tcp_sent_bytes_total[10m]) + rate(istio_tcp_received_bytes_total[10m])) by (destination_workload)

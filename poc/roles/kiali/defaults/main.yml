@@ -1,0 +1,3 @@
+---
+# modes: full (spoke UI) | remote (spoke-two resources only) | patch_multi (spoke cluster_name + oauth)
+kiali_mode: full

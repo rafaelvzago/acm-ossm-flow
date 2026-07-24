@@ -3,7 +3,7 @@ encrypt_key = no
 prompt = no
 utf8 = yes
 default_md = sha256
-default_bits = {{ certificates_root_key_size }}
+default_bits = 4096
 req_extensions = req_ext
 x509_extensions = req_ext
 distinguished_name = req_dn
@@ -12,5 +12,5 @@ subjectKeyIdentifier = hash
 basicConstraints = critical, CA:true
 keyUsage = critical, digitalSignature, nonRepudiation, keyEncipherment, keyCertSign
 [ req_dn ]
-O = {{ certificates_org }}
-CN = {{ certificates_root_cn }}
+O = Istio
+CN = Root CA

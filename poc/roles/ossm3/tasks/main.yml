@@ -1,0 +1,186 @@
+---
+- name: Resolve OSSM3 target cluster
+  ansible.builtin.set_fact:
+    ossm3_cluster: "{{ clusters[ossm3_cluster_key] }}"
+
+- name: Enable User Workload Monitoring
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: cluster-monitoring-config
+        namespace: openshift-monitoring
+      data:
+        config.yaml: |
+          enableUserWorkload: true
+
+- name: Wait for UWM Prometheus
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: openshift-user-workload-monitoring
+    label_selectors:
+      - app.kubernetes.io/name=prometheus
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+  register: uwm_pods
+  until: >
+    uwm_pods.resources | length > 0 and
+    (
+      uwm_pods.resources
+      | map(attribute='status.phase')
+      | select('equalto', 'Running')
+      | list
+      | length
+    ) > 0
+  retries: "{{ wait_retries }}"
+  delay: "{{ wait_delay }}"
+
+- name: Apply Sail / OSSM3 operator Subscription
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+    definition:
+      apiVersion: operators.coreos.com/v1alpha1
+      kind: Subscription
+      metadata:
+        name: openshift-service-mesh-operator
+        namespace: openshift-operators
+      spec:
+        channel: stable
+        installPlanApproval: Automatic
+        name: servicemeshoperator3
+        source: redhat-operators
+        sourceNamespace: openshift-marketplace
+
+- name: Wait for Sail operator pods
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Pod
+    namespace: openshift-operators
+    label_selectors:
+      - app.kubernetes.io/created-by=servicemeshoperator3
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+  register: sail_pods
+  until: >
+    sail_pods.resources | length > 0 and
+    (
+      sail_pods.resources
+      | map(attribute='status.phase')
+      | select('equalto', 'Running')
+      | list
+      | length
+    ) > 0
+  retries: "{{ wait_retries }}"
+  delay: "{{ wait_delay }}"
+
+- name: Ensure mesh namespaces
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ item.name }}"
+        labels: "{{ item.labels | default({}) }}"
+  loop:
+    - name: "{{ mesh_namespace }}"
+    - name: "{{ istio_cni_namespace }}"
+    - name: "{{ ztunnel_namespace }}"
+      labels:
+        istio-discovery: enabled
+
+- name: Label istio-system for multi-primary network
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ mesh_namespace }}"
+        labels:
+          topology.istio.io/network: "{{ ossm3_cluster.network }}"
+          istio-discovery: enabled
+  when: ossm3_multi_primary | bool
+
+- name: Apply IstioCNI
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+    definition: "{{ lookup('template', 'istiocni.yml.j2') | from_yaml }}"
+
+- name: Apply Istio control plane
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+    definition: "{{ lookup('template', 'istio.yml.j2') | from_yaml }}"
+
+- name: Apply ZTunnel
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+    definition: "{{ lookup('template', 'ztunnel.yml.j2') | from_yaml }}"
+
+- name: Wait for Istio Ready
+  kubernetes.core.k8s_info:
+    api_version: sailoperator.io/v1
+    kind: Istio
+    name: default
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+  register: istio_cr
+  until: >
+    istio_cr.resources | length > 0 and
+    (
+      istio_cr.resources[0].status.conditions
+      | default([])
+      | selectattr('type', 'equalto', 'Ready')
+      | selectattr('status', 'equalto', 'True')
+      | list
+      | length
+    ) > 0
+  retries: 60
+  delay: 15
+
+- name: Apply istiod ServiceMonitor
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+    definition: "{{ lookup('template', 'istiod-monitor.yml.j2') | from_yaml }}"
+
+- name: Apply ztunnel PodMonitor
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ ossm3_cluster.kubeconfig }}"
+    definition: "{{ lookup('template', 'ztunnel-monitor.yml.j2') | from_yaml }}"
+
+- name: Patch spoke Istio for multi-primary (when installing spoke-two path on spoke)
+  when: ossm3_patch_spoke_for_multi | default(false) | bool
+  block:
+    - name: Merge multiCluster settings on spoke Istio
+      ansible.builtin.command: >
+        oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+        patch istio default --type=merge -p
+        {"spec":{"values":{"global":{"multiCluster":{"clusterName":"{{ clusters.spoke.name }}"},"network":"{{ clusters.spoke.network }}"},"pilot":{"env":{"AMBIENT_ENABLE_MULTI_NETWORK":"true"}}}}}
+
+    - name: Merge multiCluster settings on spoke ZTunnel
+      ansible.builtin.command: >
+        oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+        patch ztunnel default --type=merge -p
+        {"spec":{"values":{"ztunnel":{"multiCluster":{"clusterName":"{{ clusters.spoke.name }}"},"network":"{{ clusters.spoke.network }}"}}}}
+
+    - name: Label spoke istio-system network
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ mesh_namespace }}"
+            labels:
+              topology.istio.io/network: "{{ clusters.spoke.network }}"
+              istio-discovery: enabled

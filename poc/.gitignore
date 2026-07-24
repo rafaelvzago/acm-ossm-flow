@@ -1,4 +1,9 @@
-files/certs/
-*.kubeconfig
+files/certs/*
+!files/certs/.gitkeep
+files/generated/
+!files/generated/.gitkeep
 .env
+*.kubeconfig
 *.retry
+/tmp/
+otel-mtls/
