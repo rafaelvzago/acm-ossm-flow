@@ -1,0 +1,43 @@
+---
+- name: Enable Kiali health_status metrics
+  ansible.builtin.command: >
+    oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+    patch kiali kiali -n {{ kiali_cr_ns }} --type=merge -p
+    {"spec":{"server":{"observability":{"metrics":{"enabled":true,"health_status":{"enabled":true}}}}}}
+
+- name: Apply Kiali ServiceMonitor (ConfigMap CA — not caFile)
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+    definition: "{{ lookup('template', 'servicemonitor.yml.j2') | from_yaml }}"
+
+- name: Apply baseline PrometheusRules
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+    definition: "{{ lookup('template', item) | from_yaml }}"
+  loop:
+    - prometheusrule-baseline.yml.j2
+    - prometheusrule-bookinfo.yml.j2
+    - prometheusrule-not-ready.yml.j2
+
+- name: Append kiali_health_status to hub metrics allowlist
+  ansible.builtin.shell: |
+    set -euo pipefail
+    oc --kubeconfig={{ clusters.hub.kubeconfig }} \
+      -n {{ acm_observability_namespace }} \
+      get configmap observability-metrics-custom-allowlist -o json \
+    | jq '.data["uwl_metrics_list.yaml"] as $cfg
+          | if ($cfg | test("kiali_health_status"))
+            then .
+            else .data["uwl_metrics_list.yaml"] = ($cfg + "- kiali_health_status\n")
+            end' \
+    | oc --kubeconfig={{ clusters.hub.kubeconfig }} apply -f -
+  args:
+    executable: /bin/bash
+
+- name: Apply Thanos Ruler custom rules on hub
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition: "{{ lookup('template', 'thanos-ruler-custom-rules.yml.j2') | from_yaml }}"

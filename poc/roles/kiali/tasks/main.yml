@@ -1,0 +1,284 @@
+---
+- name: Install Kiali operator on spoke (full mode)
+  when: kiali_mode == 'full'
+  block:
+    - name: Discover Observatorium route host on hub
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        name: observatorium-api
+        namespace: "{{ acm_observability_namespace }}"
+        kubeconfig: "{{ clusters.hub.kubeconfig }}"
+      register: obs_route
+
+    - name: Set Observatorium URL fact
+      ansible.builtin.set_fact:
+        observatorium_url: "https://{{ obs_route.resources[0].spec.host }}/api/metrics/v1/default"
+
+    - name: Extract Observatorium client certs from hub
+      ansible.builtin.shell: |
+        set -euo pipefail
+        OUT="{{ playbook_dir }}/../files/generated/obs"
+        mkdir -p "$OUT"
+        oc --kubeconfig={{ clusters.hub.kubeconfig }} get secret observability-grafana-certs \
+          -n {{ acm_observability_namespace }} \
+          -o jsonpath='{.data.tls\.crt}' | base64 -d > "$OUT/obs-tls.crt"
+        oc --kubeconfig={{ clusters.hub.kubeconfig }} get secret observability-grafana-certs \
+          -n {{ acm_observability_namespace }} \
+          -o jsonpath='{.data.tls\.key}' | base64 -d > "$OUT/obs-tls.key"
+        HOST="{{ obs_route.resources[0].spec.host }}"
+        ISSUER=$(echo | openssl s_client -connect "${HOST}:443" -servername "${HOST}" -showcerts 2>/dev/null \
+          | openssl x509 -noout -issuer || true)
+        if echo "$ISSUER" | grep -q observability-server-ca-certificate; then
+          SECRET=observability-server-ca-certs
+        else
+          SECRET=observability-client-ca-certs
+        fi
+        oc --kubeconfig={{ clusters.hub.kubeconfig }} get secret "$SECRET" \
+          -n {{ acm_observability_namespace }} \
+          -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d > "$OUT/obs-server-ca.crt" \
+          || oc --kubeconfig={{ clusters.hub.kubeconfig }} get secret "$SECRET" \
+          -n {{ acm_observability_namespace }} \
+          -o jsonpath='{.data.tls\.crt}' | base64 -d > "$OUT/obs-server-ca.crt"
+      args:
+        executable: /bin/bash
+      no_log: true
+
+    - name: Create ACM observability certs secret on spoke
+      ansible.builtin.command: >
+        oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+        create secret generic acm-observability-certs
+        -n {{ kiali_ns }}
+        --from-file=tls.crt={{ playbook_dir }}/../files/generated/obs/obs-tls.crt
+        --from-file=tls.key={{ playbook_dir }}/../files/generated/obs/obs-tls.key
+        --dry-run=client -o yaml
+      register: obs_secret_yaml
+      changed_when: false
+      no_log: true
+
+    - name: Apply ACM observability certs secret
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+        definition: "{{ obs_secret_yaml.stdout | from_yaml }}"
+      no_log: true
+
+    - name: Create kiali-cabundle ConfigMap on spoke
+      ansible.builtin.command: >
+        oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+        create configmap kiali-cabundle
+        -n {{ kiali_ns }}
+        --from-file=additional-ca-bundle.pem={{ playbook_dir }}/../files/generated/obs/obs-server-ca.crt
+        --dry-run=client -o yaml
+      register: cabundle_yaml
+      changed_when: false
+
+    - name: Apply kiali-cabundle ConfigMap
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+        definition: "{{ cabundle_yaml.stdout | from_yaml }}"
+
+    - name: Apply Kiali operator Subscription
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: Subscription
+          metadata:
+            name: kiali-ossm
+            namespace: openshift-operators
+          spec:
+            channel: stable
+            installPlanApproval: Automatic
+            name: kiali-ossm
+            source: redhat-operators
+            sourceNamespace: openshift-marketplace
+
+    - name: Wait for Kiali CRD
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: kialis.kiali.io
+        kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+      register: kiali_crd
+      until: kiali_crd.resources | length > 0
+      retries: "{{ wait_retries }}"
+      delay: "{{ wait_delay }}"
+
+    - name: Apply Kiali CR
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+        definition: "{{ lookup('template', 'kiali.yml.j2') | from_yaml }}"
+
+    - name: Wait for Kiali Successful
+      kubernetes.core.k8s_info:
+        api_version: kiali.io/v1alpha1
+        kind: Kiali
+        name: kiali
+        namespace: "{{ kiali_cr_ns }}"
+        kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+      register: kiali_cr
+      until: >
+        kiali_cr.resources | length > 0 and
+        (
+          kiali_cr.resources[0].status.conditions
+          | default([])
+          | selectattr('type', 'equalto', 'Successful')
+          | selectattr('status', 'equalto', 'True')
+          | list
+          | length
+        ) > 0
+      retries: 60
+      delay: 10
+
+    - name: Apply OSSMConsole
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+        definition:
+          apiVersion: kiali.io/v1alpha1
+          kind: OSSMConsole
+          metadata:
+            name: ossmconsole
+            namespace: "{{ kiali_ns }}"
+          spec: {}
+
+- name: Patch Kiali for multi-primary cluster_name / OAuth TLS skip
+  when: kiali_mode == 'patch_multi'
+  ansible.builtin.command: >
+    oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+    patch kiali kiali -n {{ kiali_cr_ns }} --type=merge -p
+    {"spec":{"kubernetes_config":{"cluster_name":"{{ clusters.spoke.name }}"},"auth":{"openshift":{"insecure_skip_verify_tls":true}}}}
+
+- name: Install remote-only Kiali resources on spoke-two
+  when: kiali_mode == 'remote'
+  block:
+    - name: Discover Kiali route host on spoke
+      kubernetes.core.k8s_info:
+        api_version: route.openshift.io/v1
+        kind: Route
+        name: kiali
+        namespace: "{{ kiali_ns }}"
+        kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+      register: kiali_route
+
+    - name: Set kiali_host fact
+      ansible.builtin.set_fact:
+        kiali_host: "{{ kiali_route.resources[0].spec.host }}"
+
+    - name: Ensure Kiali operator on spoke-two
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: Subscription
+          metadata:
+            name: kiali-ossm
+            namespace: openshift-operators
+          spec:
+            channel: stable
+            installPlanApproval: Automatic
+            name: kiali-ossm
+            source: redhat-operators
+            sourceNamespace: openshift-marketplace
+
+    - name: Wait for Kiali CRD on spoke-two
+      kubernetes.core.k8s_info:
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: kialis.kiali.io
+        kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+      register: kiali_crd2
+      until: kiali_crd2.resources | length > 0
+      retries: "{{ wait_retries }}"
+      delay: "{{ wait_delay }}"
+
+    - name: Apply remote Kiali CR on spoke-two
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+        definition: "{{ lookup('template', 'kiali-remote.yml.j2') | from_yaml }}"
+
+    - name: Ensure kiali SA token secret on spoke-two
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: kiali-service-account
+            namespace: "{{ kiali_ns }}"
+            annotations:
+              kubernetes.io/service-account.name: kiali-service-account
+          type: kubernetes.io/service-account-token
+
+    - name: Build spoke-two kubeconfig for Kiali multi-cluster secret
+      ansible.builtin.shell: |
+        set -euo pipefail
+        OUT="{{ playbook_dir }}/../files/generated/kiali-mc"
+        mkdir -p "$OUT"
+        # Prefer SA token secret; fall back to current user kubeconfig minify
+        if oc --kubeconfig={{ clusters.spoke_two.kubeconfig }} get secret kiali-service-account \
+             -n {{ kiali_ns }} -o jsonpath='{.data.token}' 2>/dev/null | grep -q .; then
+          TOKEN=$(oc --kubeconfig={{ clusters.spoke_two.kubeconfig }} get secret kiali-service-account \
+            -n {{ kiali_ns }} -o jsonpath='{.data.token}' | base64 -d)
+          SERVER=$(oc --kubeconfig={{ clusters.spoke_two.kubeconfig }} whoami --show-server)
+          CA=$(oc --kubeconfig={{ clusters.spoke_two.kubeconfig }} get secret kiali-service-account \
+            -n {{ kiali_ns }} -o jsonpath='{.data.ca\.crt}')
+          cat > "$OUT/{{ clusters.spoke_two.name }}" <<EOF
+        apiVersion: v1
+        kind: Config
+        clusters:
+        - cluster:
+            certificate-authority-data: ${CA}
+            server: ${SERVER}
+          name: {{ clusters.spoke_two.name }}
+        contexts:
+        - context:
+            cluster: {{ clusters.spoke_two.name }}
+            user: kiali
+          name: {{ clusters.spoke_two.name }}
+        current-context: {{ clusters.spoke_two.name }}
+        users:
+        - name: kiali
+          user:
+            token: ${TOKEN}
+        EOF
+        else
+          oc --kubeconfig={{ clusters.spoke_two.kubeconfig }} config view --minify --flatten \
+            > "$OUT/{{ clusters.spoke_two.name }}"
+        fi
+      args:
+        executable: /bin/bash
+      no_log: true
+
+    - name: Create kiali-multi-cluster-secret on spoke
+      ansible.builtin.command: >
+        oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+        create secret generic kiali-multi-cluster-secret
+        -n {{ kiali_ns }}
+        --from-file={{ clusters.spoke_two.name }}={{ playbook_dir }}/../files/generated/kiali-mc/{{ clusters.spoke_two.name }}
+        --dry-run=client -o yaml
+      register: kiali_mc_secret
+      changed_when: false
+      no_log: true
+
+    - name: Apply kiali-multi-cluster-secret
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+        definition: "{{ kiali_mc_secret.stdout | from_yaml }}"
+      no_log: true
+
+    - name: Label kiali-multi-cluster-secret
+      ansible.builtin.command: >
+        oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+        label secret kiali-multi-cluster-secret
+        -n {{ kiali_ns }}
+        kiali.io/kiali-multi-cluster-secret=true
+        --overwrite

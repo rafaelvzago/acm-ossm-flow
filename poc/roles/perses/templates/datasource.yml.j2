@@ -1,0 +1,30 @@
+apiVersion: perses.dev/v1alpha2
+kind: PersesDatasource
+metadata:
+  name: acm-thanos
+  namespace: {{ perses_namespace }}
+spec:
+  config:
+    display:
+      name: "ACM Hub Thanos"
+    default: false
+    plugin:
+      kind: PrometheusDatasource
+      spec:
+        proxy:
+          kind: HTTPProxy
+          spec:
+            url: "{{ observatorium_url }}"
+            secret: acm-thanos-secret
+  client:
+    tls:
+      enable: true
+      caCert:
+        type: file
+        certPath: /etc/ssl/certs/acm-thanos-ca.crt
+      userCert:
+        type: secret
+        name: perses-acm-client-certs
+        namespace: openshift-operators
+        certPath: tls.crt
+        privateKeyPath: tls.key

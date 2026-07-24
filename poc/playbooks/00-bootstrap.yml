@@ -1,0 +1,9 @@
+---
+- name: Bootstrap — validate kubeconfigs and tools
+  hosts: localhost
+  gather_facts: false
+  roles:
+    - role: bootstrap
+      vars:
+        require_spoke_two: "{{ require_spoke_two | default(false) }}"
+        require_istioctl: "{{ require_istioctl | default(false) }}"

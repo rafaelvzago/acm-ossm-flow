@@ -1,0 +1,48 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel
+  namespace: {{ mesh_namespace }}
+spec:
+  mode: deployment
+  replicas: 1
+  volumeMounts:
+  - name: mtls-bundle
+    mountPath: /etc/otel/mtls
+    readOnly: true
+  volumes:
+  - name: mtls-bundle
+    secret:
+      secretName: {{ remote_collector_name }}-client-bundle
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch: {}
+      resource:
+        attributes:
+        - key: k8s.cluster.name
+          action: upsert
+          value: {{ clusters.spoke_two.name }}
+    exporters:
+      otlp_http/central:
+        endpoint: https://{{ remote_route_host }}
+        tls:
+          cert_file: /etc/otel/mtls/tls.crt
+          key_file: /etc/otel/mtls/tls.key
+          ca_file: /etc/otel/mtls/ca.crt
+    service:
+      pipelines:
+        traces:
+          receivers:
+          - otlp
+          processors:
+          - resource
+          - batch
+          exporters:
+          - otlp_http/central

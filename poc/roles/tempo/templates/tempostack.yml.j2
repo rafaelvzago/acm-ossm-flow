@@ -1,0 +1,23 @@
+apiVersion: tempo.grafana.com/v1alpha1
+kind: TempoStack
+metadata:
+  name: {{ tempo_stack_name }}
+  namespace: {{ tempo_namespace }}
+spec:
+  managementState: Managed
+  storageSize: 1Gi
+  storage:
+    secret:
+      type: s3
+      name: tempostack-dev-minio
+  tenants:
+    mode: openshift
+    authentication:
+    - tenantName: {{ tempo_tenant }}
+      tenantId: {{ tempo_tenant_id }}
+  template:
+    gateway:
+      enabled: true
+    queryFrontend:
+      jaegerQuery:
+        enabled: true

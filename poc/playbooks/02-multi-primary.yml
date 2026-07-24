@@ -1,0 +1,74 @@
+---
+- name: Part 2 — Multi-Primary (spoke-two + East-West + dual Kiali)
+  hosts: localhost
+  gather_facts: false
+  pre_tasks:
+    - name: Bootstrap all three clusters + istioctl
+      ansible.builtin.include_role:
+        name: bootstrap
+      vars:
+        require_spoke_two: true
+        require_istioctl: true
+
+    - name: Ensure generated files directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../files/generated"
+        state: directory
+        mode: "0700"
+
+  tasks:
+    - name: Spoke-two intermediate CA
+      ansible.builtin.include_role:
+        name: certificates
+      vars:
+        certificates_cluster_key: spoke_two
+        certificates_generate_root: false
+      tags: [certs]
+
+    - name: Import spoke-two into ACM
+      ansible.builtin.include_role:
+        name: acm_import
+      vars:
+        import_cluster_key: spoke_two
+      tags: [import]
+
+    - name: OSSM3 on spoke-two (multi-primary)
+      ansible.builtin.include_role:
+        name: ossm3
+      vars:
+        ossm3_cluster_key: spoke_two
+        ossm3_multi_primary: true
+        ossm3_patch_spoke_for_multi: true
+      tags: [ossm3]
+
+    - name: Patch Kiali on spoke for multi-primary
+      ansible.builtin.include_role:
+        name: kiali
+      vars:
+        kiali_mode: patch_multi
+      tags: [kiali]
+
+    - name: East-West gateways and meshNetworks
+      ansible.builtin.include_role:
+        name: eastwest
+      tags: [eastwest]
+
+    - name: Cross-cluster remote secrets
+      ansible.builtin.include_role:
+        name: remote_secrets
+      tags: [remote_secrets]
+
+    - name: Kiali remote resources + multi-cluster secret
+      ansible.builtin.include_role:
+        name: kiali
+      vars:
+        kiali_mode: remote
+      tags: [kiali]
+
+    - name: Demo apps on spoke-two
+      ansible.builtin.include_role:
+        name: demo_apps
+      vars:
+        demo_target: spoke_two
+        demo_phase: spoke_two
+      tags: [demos]

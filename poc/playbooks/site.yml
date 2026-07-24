@@ -1,0 +1,18 @@
+---
+- name: Site — Parts 1–4 (OSSM ACM multi-cluster completo)
+  import_playbook: 01-hub-spoke.yml
+
+- name: Site — multi-primary
+  import_playbook: 02-multi-primary.yml
+
+- name: Site — Perses + Tempo
+  import_playbook: 03-perses-tempo.yml
+
+- name: Site — health alerts
+  import_playbook: 04-health-alerts.yml
+
+- name: Site — verify
+  import_playbook: verify.yml
+  vars:
+    verify_multi_primary: true
+    verify_perses: true

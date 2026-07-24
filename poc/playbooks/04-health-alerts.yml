@@ -1,0 +1,17 @@
+---
+- name: Part 4 — Health status alerts
+  hosts: localhost
+  gather_facts: false
+  pre_tasks:
+    - name: Bootstrap hub and spoke
+      ansible.builtin.include_role:
+        name: bootstrap
+      vars:
+        require_spoke_two: false
+        require_istioctl: false
+
+  tasks:
+    - name: Kiali health metrics + hub Thanos Ruler
+      ansible.builtin.include_role:
+        name: health_alerts
+      tags: [health]

@@ -1,0 +1,200 @@
+---
+- name: Resolve demo cluster
+  ansible.builtin.set_fact:
+    demo_cluster: "{{ clusters[demo_target] }}"
+    istio_minor: "{{ istio_version.split('.')[0:2] | join('.') }}"
+
+- name: Deploy spoke full demos (ambient + bookinfo)
+  when: demo_phase == 'spoke_full'
+  block:
+    - name: Create ambient-demo namespace
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ demo_cluster.kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ambient-demo
+            labels:
+              istio.io/dataplane-mode: ambient
+              istio-discovery: enabled
+
+    - name: Download helloworld sample
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/openshift-service-mesh/istio/release-{{ istio_minor }}/samples/helloworld/helloworld.yaml"
+        dest: "{{ playbook_dir }}/../files/generated/helloworld.yaml"
+        mode: "0644"
+      register: hw_dl
+      retries: 3
+      delay: 5
+
+    - name: Apply helloworld service and versions
+      ansible.builtin.command: >
+        oc --kubeconfig={{ demo_cluster.kubeconfig }}
+        apply -n ambient-demo -l {{ item }}
+        -f {{ playbook_dir }}/../files/generated/helloworld.yaml
+      loop:
+        - service=helloworld
+        - version=v1
+        - version=v2
+
+    - name: Deploy ambient traffic-gen
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ demo_cluster.kubeconfig }}"
+        definition: "{{ lookup('template', 'traffic-gen.yml.j2') | from_yaml }}"
+      vars:
+        traffic_gen_namespace: ambient-demo
+        traffic_gen_url: http://helloworld:5000/hello
+
+    - name: Apply ambient waypoint
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ demo_cluster.kubeconfig }}"
+        definition: "{{ lookup('template', 'waypoint.yml.j2') | from_yaml }}"
+
+    - name: Label ambient-demo to use waypoint
+      ansible.builtin.command: >
+        oc --kubeconfig={{ demo_cluster.kubeconfig }}
+        label namespace ambient-demo istio.io/use-waypoint=waypoint --overwrite
+
+    - name: Create bookinfo namespace
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ demo_cluster.kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: bookinfo
+            labels:
+              istio-injection: enabled
+              istio-discovery: enabled
+
+    - name: Apply bookinfo
+      ansible.builtin.command: >
+        oc --kubeconfig={{ demo_cluster.kubeconfig }}
+        apply -n bookinfo
+        -f https://raw.githubusercontent.com/openshift-service-mesh/istio/release-{{ istio_minor }}/samples/bookinfo/platform/kube/bookinfo.yaml
+
+    - name: Apply bookinfo gateway
+      ansible.builtin.command: >
+        oc --kubeconfig={{ demo_cluster.kubeconfig }}
+        apply -n bookinfo
+        -f https://raw.githubusercontent.com/openshift-service-mesh/istio/release-{{ istio_minor }}/samples/bookinfo/gateway-api/bookinfo-gateway.yaml
+
+    - name: Wait for bookinfo deployments Available
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        namespace: bookinfo
+        kubeconfig: "{{ demo_cluster.kubeconfig }}"
+        wait: true
+        wait_condition:
+          type: Available
+          status: "True"
+        wait_timeout: 600
+      register: bookinfo_deploys
+      failed_when: false
+
+    - name: Deploy bookinfo traffic-gen
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ demo_cluster.kubeconfig }}"
+        definition: "{{ lookup('template', 'traffic-gen.yml.j2') | from_yaml }}"
+      vars:
+        traffic_gen_namespace: bookinfo
+        traffic_gen_url: http://productpage:9080/productpage
+
+    - name: Apply PodMonitors for demo namespaces
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ demo_cluster.kubeconfig }}"
+        definition: "{{ lookup('template', 'proxies-monitor.yml.j2') | from_yaml }}"
+      vars:
+        monitor_namespace: "{{ item }}"
+      loop:
+        - ambient-demo
+        - bookinfo
+
+- name: Deploy spoke-two demos
+  when: demo_phase == 'spoke_two'
+  block:
+    - name: Create ambient-demo on spoke-two
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: ambient-demo
+            labels:
+              istio.io/dataplane-mode: ambient
+              istio-discovery: enabled
+
+    - name: Ensure helloworld manifest downloaded
+      ansible.builtin.get_url:
+        url: "https://raw.githubusercontent.com/openshift-service-mesh/istio/release-{{ istio_minor }}/samples/helloworld/helloworld.yaml"
+        dest: "{{ playbook_dir }}/../files/generated/helloworld.yaml"
+        mode: "0644"
+      register: hw_dl2
+      retries: 3
+      delay: 5
+
+    - name: Apply helloworld on spoke-two
+      ansible.builtin.command: >
+        oc --kubeconfig={{ clusters.spoke_two.kubeconfig }}
+        apply -n ambient-demo -l {{ item }}
+        -f {{ playbook_dir }}/../files/generated/helloworld.yaml
+      loop:
+        - service=helloworld
+        - version=v1
+        - version=v2
+
+    - name: Apply waypoint on spoke-two
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+        definition: "{{ lookup('template', 'waypoint.yml.j2') | from_yaml }}"
+
+    - name: Label ambient-demo waypoint on spoke-two
+      ansible.builtin.command: >
+        oc --kubeconfig={{ clusters.spoke_two.kubeconfig }}
+        label namespace ambient-demo istio.io/use-waypoint=waypoint --overwrite
+
+    - name: Label helloworld global on both clusters
+      ansible.builtin.command: >
+        oc --kubeconfig={{ item }}
+        label svc helloworld -n ambient-demo istio.io/global=true --overwrite
+      loop:
+        - "{{ clusters.spoke.kubeconfig }}"
+        - "{{ clusters.spoke_two.kubeconfig }}"
+
+    - name: Create bookinfo on spoke-two
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: bookinfo
+            labels:
+              istio-injection: enabled
+              istio-discovery: enabled
+
+    - name: Apply ratings-v2 on spoke-two
+      kubernetes.core.k8s:
+        state: present
+        kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+        definition: "{{ lookup('template', 'ratings-v2.yml.j2') | from_yaml_all | list }}"
+
+    - name: Label ratings global on both clusters
+      ansible.builtin.command: >
+        oc --kubeconfig={{ item }}
+        label svc ratings -n bookinfo istio.io/global=true --overwrite
+      loop:
+        - "{{ clusters.spoke.kubeconfig }}"
+        - "{{ clusters.spoke_two.kubeconfig }}"

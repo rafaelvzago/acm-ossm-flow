@@ -1,0 +1,61 @@
+---
+- name: Part 1 — Hub/Spoke (ACM + OSSM3 + Kiali + demos)
+  hosts: localhost
+  gather_facts: false
+  pre_tasks:
+    - name: Bootstrap hub and spoke
+      ansible.builtin.include_role:
+        name: bootstrap
+      vars:
+        require_spoke_two: false
+        require_istioctl: false
+
+    - name: Ensure generated files directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../files/generated"
+        state: directory
+        mode: "0700"
+
+  tasks:
+    - name: Phase 1 — ACM on hub
+      ansible.builtin.include_role:
+        name: acm_hub
+      tags: [acm]
+
+    - name: Phase 2 — Import spoke into ACM
+      ansible.builtin.include_role:
+        name: acm_import
+      vars:
+        import_cluster_key: spoke
+      tags: [import]
+
+    - name: Phase 3 — Certificates for spoke
+      ansible.builtin.include_role:
+        name: certificates
+      vars:
+        certificates_cluster_key: spoke
+        certificates_generate_root: true
+      tags: [certs]
+
+    - name: Phase 3 — OSSM3 on spoke
+      ansible.builtin.include_role:
+        name: ossm3
+      vars:
+        ossm3_cluster_key: spoke
+        ossm3_multi_primary: false
+      tags: [ossm3]
+
+    - name: Phase 4 — Kiali on spoke
+      ansible.builtin.include_role:
+        name: kiali
+      vars:
+        kiali_mode: full
+      tags: [kiali]
+
+    - name: Phase 5 — Demo applications on spoke
+      ansible.builtin.include_role:
+        name: demo_apps
+      vars:
+        demo_target: spoke
+        demo_phase: spoke_full
+      tags: [demos]

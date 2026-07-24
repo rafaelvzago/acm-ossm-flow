@@ -1,0 +1,5 @@
+---
+# demo_target: spoke | spoke_two
+demo_target: spoke
+# demo_phase: spoke_full | spoke_two (ambient + ratings-v2 + global labels)
+demo_phase: spoke_full

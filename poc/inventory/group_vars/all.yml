@@ -1,0 +1,65 @@
+---
+# Inventário sanitizado — sem APIs, LBs, Routes ou senhas reais.
+# Endereços de cluster: faça oc login e aponte KUBECONFIG_* (ver .env.example).
+
+clusters:
+  hub:
+    context_name: ossm-kiali-hub
+    kubeconfig: "{{ lookup('env', 'KUBECONFIG_HUB') }}"
+  spoke:
+    name: spoke
+    network: network1
+    context_name: ossm-kiali-spoke
+    kubeconfig: "{{ lookup('env', 'KUBECONFIG_SPOKE') }}"
+  spoke_two:
+    name: spoke-two
+    network: network2
+    context_name: ossm-kiali-spoke-two
+    kubeconfig: "{{ lookup('env', 'KUBECONFIG_SPOKE_TWO') }}"
+
+# Mesh / OSSM3
+istio_version: "1.30.1"
+mesh_id: mesh1
+mesh_namespace: istio-system
+ztunnel_namespace: ztunnel
+istio_cni_namespace: istio-cni
+
+# ACM
+acm_namespace: open-cluster-management
+acm_observability_namespace: open-cluster-management-observability
+# Canal: deixe vazio para descobrir o mais recente no packagemanifest
+acm_channel: ""
+
+# MinIO in-cluster (demo ACM Thanos + Tempo) — NÃO é credencial de admin do cluster
+minio_access_key: minio
+minio_secret_key: minio123
+
+# LB: "aws" prefer hostname; "generic" prefer IP (fallback automático se um faltar)
+cloud_provider: generic
+
+# Certificados (gerados localmente, gitignored)
+certificates_dir: "{{ playbook_dir }}/../files/certs"
+certificates_validity_days: 3650
+
+# Tempo / Perses
+tempo_namespace: tempo
+tempo_stack_name: istio
+tempo_tenant: "{{ mesh_id }}"
+tempo_tenant_id: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+perses_namespace: perses
+otel_mtls_dir: "{{ playbook_dir }}/../files/generated/otel-mtls"
+# Definido em runtime na role tempo a partir de clusters.spoke_two.name
+
+# Kiali
+kiali_ns: istio-system
+kiali_cr_ns: istio-system
+kiali_instance_name: kiali
+
+# Timeouts
+wait_retries: 60
+wait_delay: 10
+lb_wait_retries: 36
+lb_wait_delay: 10
+
+# Tools
+istioctl_bin: istioctl

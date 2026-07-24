@@ -1,0 +1,32 @@
+---
+- name: Read LoadBalancer ingress for {{ lb_service }}
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Service
+    name: "{{ lb_service }}"
+    namespace: "{{ mesh_namespace }}"
+    kubeconfig: "{{ lb_kubeconfig }}"
+  register: lb_svc
+  until: >
+    lb_svc.resources | length > 0 and
+    (
+      lb_svc.resources[0].status.loadBalancer.ingress
+      | default([])
+      | length
+    ) > 0
+  retries: "{{ lb_wait_retries }}"
+  delay: "{{ lb_wait_delay }}"
+
+- name: Compute LB address for {{ lb_service }}
+  ansible.builtin.set_fact:
+    _lb_address: >-
+      {% set ing = lb_svc.resources[0].status.loadBalancer.ingress[0] -%}
+      {%- if cloud_provider == 'aws' -%}
+      {{ ing.hostname | default(ing.ip, true) }}
+      {%- else -%}
+      {{ ing.ip | default(ing.hostname, true) }}
+      {%- endif -%}
+
+- name: Publish fact {{ lb_fact_name }}
+  ansible.builtin.set_fact:
+    "{{ lb_fact_name }}": "{{ _lb_address | trim }}"

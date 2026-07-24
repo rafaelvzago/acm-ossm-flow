@@ -1,0 +1,113 @@
+---
+- name: Resolve managed cluster target
+  ansible.builtin.set_fact:
+    import_cluster: "{{ clusters[import_cluster_key] }}"
+
+- name: Apply ManagedCluster
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition:
+      apiVersion: cluster.open-cluster-management.io/v1
+      kind: ManagedCluster
+      metadata:
+        name: "{{ import_cluster.name }}"
+        labels:
+          cloud: auto-detect
+          vendor: auto-detect
+      spec:
+        hubAcceptsClient: true
+
+- name: Ensure ManagedCluster namespace exists on hub
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ import_cluster.name }}"
+
+- name: Export spoke kubeconfig for auto-import (no secrets committed)
+  ansible.builtin.command: >
+    oc --kubeconfig={{ import_cluster.kubeconfig }}
+    config view --minify --flatten
+  register: spoke_kubeconfig_raw
+  changed_when: false
+  no_log: true
+
+- name: Write temporary auto-import kubeconfig
+  ansible.builtin.copy:
+    content: "{{ spoke_kubeconfig_raw.stdout }}"
+    dest: "/tmp/ansible-auto-import-{{ import_cluster.name }}.kubeconfig"
+    mode: "0600"
+  no_log: true
+
+- name: Create auto-import-secret on hub
+  ansible.builtin.command: >
+    oc --kubeconfig={{ clusters.hub.kubeconfig }}
+    create secret generic auto-import-secret
+    -n {{ import_cluster.name }}
+    --from-file=kubeconfig=/tmp/ansible-auto-import-{{ import_cluster.name }}.kubeconfig
+    --dry-run=client -o yaml
+  register: auto_import_secret_yaml
+  changed_when: false
+  no_log: true
+
+- name: Apply auto-import-secret
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition: "{{ auto_import_secret_yaml.stdout | from_yaml }}"
+  no_log: true
+
+- name: Apply KlusterletAddonConfig
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+    definition:
+      apiVersion: agent.open-cluster-management.io/v1
+      kind: KlusterletAddonConfig
+      metadata:
+        name: "{{ import_cluster.name }}"
+        namespace: "{{ import_cluster.name }}"
+      spec:
+        applicationManager:
+          enabled: true
+        certPolicyController:
+          enabled: true
+        policyController:
+          enabled: true
+        searchCollector:
+          enabled: true
+
+- name: Wait for ManagedCluster Joined and Available
+  kubernetes.core.k8s_info:
+    api_version: cluster.open-cluster-management.io/v1
+    kind: ManagedCluster
+    name: "{{ import_cluster.name }}"
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+  register: mc
+  until: >
+    mc.resources | length > 0 and
+    (
+      mc.resources[0].status.conditions
+      | selectattr('type', 'equalto', 'ManagedClusterJoined')
+      | selectattr('status', 'equalto', 'True')
+      | list
+      | length
+    ) > 0 and
+    (
+      mc.resources[0].status.conditions
+      | selectattr('type', 'equalto', 'ManagedClusterConditionAvailable')
+      | selectattr('status', 'equalto', 'True')
+      | list
+      | length
+    ) > 0
+  retries: 90
+  delay: 20
+
+- name: Remove temporary auto-import kubeconfig
+  ansible.builtin.file:
+    path: "/tmp/ansible-auto-import-{{ import_cluster.name }}.kubeconfig"
+    state: absent

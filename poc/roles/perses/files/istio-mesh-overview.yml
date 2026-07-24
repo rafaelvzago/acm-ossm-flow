@@ -1,0 +1,130 @@
+apiVersion: perses.dev/v1alpha2
+kind: PersesDashboard
+metadata:
+  name: istio-mesh-overview
+  namespace: perses
+spec:
+  config:
+    display:
+      name: "Istio Mesh Overview"
+    duration: 30m
+    layouts:
+    - kind: Grid
+      spec:
+        display:
+          title: "HTTP Traffic"
+        items:
+        - content:
+            $ref: '#/spec/panels/request_rate'
+          height: 8
+          width: 12
+          x: 0
+          "y": 0
+        - content:
+            $ref: '#/spec/panels/error_rate'
+          height: 8
+          width: 12
+          x: 12
+          "y": 0
+    - kind: Grid
+      spec:
+        display:
+          title: "TCP Traffic (Ambient / Ztunnel)"
+        items:
+        - content:
+            $ref: '#/spec/panels/tcp_sent'
+          height: 8
+          width: 12
+          x: 0
+          "y": 0
+        - content:
+            $ref: '#/spec/panels/tcp_received'
+          height: 8
+          width: 12
+          x: 12
+          "y": 0
+    panels:
+      request_rate:
+        kind: Panel
+        spec:
+          display:
+            name: "Request Rate (rps)"
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: acm-thanos
+                  query: sum(rate(istio_requests_total{reporter="destination"}[10m])) by (destination_service_name)
+      error_rate:
+        kind: Panel
+        spec:
+          display:
+            name: "5xx Error Rate"
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: acm-thanos
+                  query: sum(rate(istio_requests_total{reporter="destination",response_code=~"5.*"}[10m])) by (destination_service_name)
+      tcp_sent:
+        kind: Panel
+        spec:
+          display:
+            name: "TCP Bytes Sent"
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: acm-thanos
+                  query: sum(rate(istio_tcp_sent_bytes_total[10m])) by (destination_workload)
+      tcp_received:
+        kind: Panel
+        spec:
+          display:
+            name: "TCP Bytes Received"
+          plugin:
+            kind: TimeSeriesChart
+            spec:
+              legend:
+                mode: list
+                position: bottom
+          queries:
+          - kind: TimeSeriesQuery
+            spec:
+              plugin:
+                kind: PrometheusTimeSeriesQuery
+                spec:
+                  datasource:
+                    kind: PrometheusDatasource
+                    name: acm-thanos
+                  query: sum(rate(istio_tcp_received_bytes_total[10m])) by (destination_workload)

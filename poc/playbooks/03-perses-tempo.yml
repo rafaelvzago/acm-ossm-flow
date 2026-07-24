@@ -1,0 +1,31 @@
+---
+- name: Part 3 — Perses + Tempo
+  hosts: localhost
+  gather_facts: false
+  pre_tasks:
+    - name: Bootstrap three clusters
+      ansible.builtin.include_role:
+        name: bootstrap
+      vars:
+        require_spoke_two: true
+        require_istioctl: false
+
+    - name: Ensure generated dirs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0700"
+      loop:
+        - "{{ playbook_dir }}/../files/generated"
+        - "{{ otel_mtls_dir }}"
+
+  tasks:
+    - name: Perses dashboards and Kiali link
+      ansible.builtin.include_role:
+        name: perses
+      tags: [perses]
+
+    - name: Tempo + OTEL multi-cluster tracing
+      ansible.builtin.include_role:
+        name: tempo
+      tags: [tempo]

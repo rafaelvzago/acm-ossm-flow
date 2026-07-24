@@ -1,0 +1,129 @@
+---
+- name: Resolve certificate target cluster
+  ansible.builtin.set_fact:
+    cert_cluster: "{{ clusters[certificates_cluster_key] }}"
+    certificates_location: "{{ clusters[certificates_cluster_key].name }}"
+    cert_cluster_dir: "{{ certificates_dir }}/{{ clusters[certificates_cluster_key].name }}"
+
+- name: Ensure certificate directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+  loop:
+    - "{{ certificates_dir }}"
+    - "{{ cert_cluster_dir }}"
+
+- name: Write root CA openssl config
+  ansible.builtin.template:
+    src: root-ca.conf.j2
+    dest: "{{ certificates_dir }}/root-ca.conf"
+    mode: "0600"
+  when: certificates_generate_root | bool
+
+- name: Generate root CA key
+  ansible.builtin.command: >
+    openssl genrsa -out {{ certificates_dir }}/root-key.pem 4096
+  args:
+    creates: "{{ certificates_dir }}/root-key.pem"
+  when: certificates_generate_root | bool
+
+- name: Generate root CA CSR
+  ansible.builtin.command: >
+    openssl req -sha256 -new -key {{ certificates_dir }}/root-key.pem
+    -config {{ certificates_dir }}/root-ca.conf
+    -out {{ certificates_dir }}/root-cert.csr
+  args:
+    creates: "{{ certificates_dir }}/root-cert.csr"
+  when: certificates_generate_root | bool
+
+- name: Sign root CA certificate
+  ansible.builtin.command: >
+    openssl x509 -req -sha256 -days {{ certificates_validity_days }}
+    -signkey {{ certificates_dir }}/root-key.pem
+    -extensions req_ext -extfile {{ certificates_dir }}/root-ca.conf
+    -in {{ certificates_dir }}/root-cert.csr
+    -out {{ certificates_dir }}/root-cert.pem
+  args:
+    creates: "{{ certificates_dir }}/root-cert.pem"
+  when: certificates_generate_root | bool
+
+- name: Assert root CA exists for intermediate signing
+  ansible.builtin.stat:
+    path: "{{ certificates_dir }}/root-cert.pem"
+  register: root_cert_stat
+
+- name: Fail if root CA missing
+  ansible.builtin.assert:
+    that: root_cert_stat.stat.exists
+    fail_msg: Root CA ausente. Rode certificates com certificates_generate_root=true no spoke primeiro.
+
+- name: Write intermediate CA openssl config
+  ansible.builtin.template:
+    src: intermediate-ca.conf.j2
+    dest: "{{ cert_cluster_dir }}/intermediate.conf"
+    mode: "0600"
+
+- name: Generate intermediate CA key
+  ansible.builtin.command: >
+    openssl genrsa -out {{ cert_cluster_dir }}/ca-key.pem 4096
+  args:
+    creates: "{{ cert_cluster_dir }}/ca-key.pem"
+
+- name: Generate intermediate CSR
+  ansible.builtin.command: >
+    openssl req -new -config {{ cert_cluster_dir }}/intermediate.conf
+    -key {{ cert_cluster_dir }}/ca-key.pem
+    -out {{ cert_cluster_dir }}/cluster-ca.csr
+  args:
+    creates: "{{ cert_cluster_dir }}/cluster-ca.csr"
+
+- name: Sign intermediate with root CA
+  ansible.builtin.command: >
+    openssl x509 -req -sha256 -days {{ certificates_validity_days }}
+    -CA {{ certificates_dir }}/root-cert.pem
+    -CAkey {{ certificates_dir }}/root-key.pem
+    -CAcreateserial
+    -extensions req_ext -extfile {{ cert_cluster_dir }}/intermediate.conf
+    -in {{ cert_cluster_dir }}/cluster-ca.csr
+    -out {{ cert_cluster_dir }}/ca-cert.pem
+  args:
+    creates: "{{ cert_cluster_dir }}/ca-cert.pem"
+
+- name: Build cert-chain.pem
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cat "{{ cert_cluster_dir }}/ca-cert.pem" "{{ certificates_dir }}/root-cert.pem" \
+      > "{{ cert_cluster_dir }}/cert-chain.pem"
+  args:
+    creates: "{{ cert_cluster_dir }}/cert-chain.pem"
+
+- name: Ensure istio-system namespace on target cluster
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ cert_cluster.kubeconfig }}"
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ mesh_namespace }}"
+
+- name: Check if cacerts secret already exists
+  kubernetes.core.k8s_info:
+    api_version: v1
+    kind: Secret
+    name: cacerts
+    namespace: "{{ mesh_namespace }}"
+    kubeconfig: "{{ cert_cluster.kubeconfig }}"
+  register: cacerts_existing
+
+- name: Create cacerts secret
+  ansible.builtin.command: >
+    oc --kubeconfig={{ cert_cluster.kubeconfig }}
+    create secret generic cacerts
+    -n {{ mesh_namespace }}
+    --from-file=ca-cert.pem={{ cert_cluster_dir }}/ca-cert.pem
+    --from-file=ca-key.pem={{ cert_cluster_dir }}/ca-key.pem
+    --from-file=root-cert.pem={{ certificates_dir }}/root-cert.pem
+    --from-file=cert-chain.pem={{ cert_cluster_dir }}/cert-chain.pem
+  when: cacerts_existing.resources | length == 0

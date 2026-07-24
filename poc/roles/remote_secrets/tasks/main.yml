@@ -1,0 +1,47 @@
+---
+# Pitfall: istioctl create-remote-secret MUST use -n istio-system
+
+- name: Ensure istio-reader SA and cluster-reader on both spokes
+  ansible.builtin.shell: |
+    set -euo pipefail
+    KC="{{ item }}"
+    oc --kubeconfig="$KC" create serviceaccount istio-reader-service-account \
+      -n {{ mesh_namespace }} --dry-run=client -o yaml | oc --kubeconfig="$KC" apply -f -
+    oc --kubeconfig="$KC" adm policy add-cluster-role-to-user cluster-reader \
+      -z istio-reader-service-account -n {{ mesh_namespace }}
+  loop:
+    - "{{ clusters.spoke.kubeconfig }}"
+    - "{{ clusters.spoke_two.kubeconfig }}"
+  changed_when: true
+
+- name: Create remote secret for spoke-two on spoke
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG={{ clusters.spoke_two.kubeconfig }}
+    {{ istioctl_bin }} create-remote-secret \
+      --name={{ clusters.spoke_two.name }} \
+      -n {{ mesh_namespace }} \
+      --create-service-account=false \
+      | oc --kubeconfig={{ clusters.spoke.kubeconfig }} apply -f -
+  args:
+    executable: /bin/bash
+  no_log: true
+
+- name: Create remote secret for spoke on spoke-two
+  ansible.builtin.shell: |
+    set -euo pipefail
+    export KUBECONFIG={{ clusters.spoke.kubeconfig }}
+    {{ istioctl_bin }} create-remote-secret \
+      --name={{ clusters.spoke.name }} \
+      -n {{ mesh_namespace }} \
+      --create-service-account=false \
+      | oc --kubeconfig={{ clusters.spoke_two.kubeconfig }} apply -f -
+  args:
+    executable: /bin/bash
+  no_log: true
+
+- name: Restart bookinfo deployments on spoke after multi-primary wire-up
+  ansible.builtin.command: >
+    oc --kubeconfig={{ clusters.spoke.kubeconfig }}
+    rollout restart deployment -n bookinfo
+  failed_when: false

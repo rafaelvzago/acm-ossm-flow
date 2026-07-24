@@ -1,0 +1,28 @@
+apiVersion: sailoperator.io/v1
+kind: Istio
+metadata:
+  name: default
+spec:
+  namespace: {{ mesh_namespace }}
+  profile: openshift-ambient
+  updateStrategy:
+    type: InPlace
+  values:
+    global:
+      meshID: {{ mesh_id }}
+{% if ossm3_multi_primary %}
+      multiCluster:
+        clusterName: {{ ossm3_cluster.name }}
+      network: {{ ossm3_cluster.network }}
+{% endif %}
+    meshConfig:
+      discoverySelectors:
+      - matchLabels:
+          istio-discovery: enabled
+    pilot:
+      trustedZtunnelNamespace: {{ ztunnel_namespace }}
+{% if ossm3_multi_primary %}
+      env:
+        AMBIENT_ENABLE_MULTI_NETWORK: "true"
+{% endif %}
+  version: v{{ istio_version }}

@@ -1,0 +1,58 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kiali-health-status
+  namespace: {{ kiali_ns }}
+  labels:
+    openshift.io/prometheus-rule-evaluation-scope: leaf-prometheus
+spec:
+  groups:
+  - name: kiali.health.recording
+    rules:
+    - record: kiali:health_status:max
+      expr: |
+        max by (cluster, exported_namespace, health_type, name) (kiali_health_status)
+    - record: kiali:health_status:namespace_max
+      expr: |
+        max by (cluster, exported_namespace, name) (
+          kiali_health_status{health_type="namespace"}
+        )
+  - name: kiali.health.alerts
+    rules:
+    - alert: KialiHealthFailure
+      expr: |
+        kiali:health_status:max{health_type=~"app|service|workload"} == 3
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: >-
+          {% raw %}{{ $labels.health_type }} {{ $labels.name }} in {{ $labels.exported_namespace }}
+          (cluster {{ $labels.cluster }}) is in Failure{% endraw %}
+        description: >-
+          Kiali reported Failure (kiali_health_status == 3) for at least 5 minutes.
+    - alert: KialiHealthDegraded
+      expr: |
+        kiali:health_status:max{health_type=~"app|service|workload"} == 2
+      for: 10m
+      labels:
+        severity: warning
+      annotations:
+        summary: >-
+          {% raw %}{{ $labels.health_type }} {{ $labels.name }} in {{ $labels.exported_namespace }}
+          (cluster {{ $labels.cluster }}) is Degraded{% endraw %}
+        description: >-
+          Kiali reported Degraded (kiali_health_status == 2) for at least 10 minutes.
+    - alert: KialiNamespaceHealthFailure
+      expr: |
+        kiali:health_status:namespace_max == 3
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: >-
+          {% raw %}Namespace {{ $labels.exported_namespace }} (cluster {{ $labels.cluster }})
+          is in Failure{% endraw %}
+        description: >-
+          Kiali namespace aggregate health status is Failure (kiali_health_status == 3)
+          for at least 5 minutes.

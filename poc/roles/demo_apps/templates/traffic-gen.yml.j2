@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-gen
+  namespace: {{ traffic_gen_namespace }}
+  labels:
+    app: traffic-gen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traffic-gen
+  template:
+    metadata:
+      labels:
+        app: traffic-gen
+    spec:
+      containers:
+      - name: client
+        image: quay.io/curl/curl:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          while true; do
+            curl -sS -o /dev/null -w "%{http_code}\n" "{{ traffic_gen_url }}" || true
+            sleep 2
+          done

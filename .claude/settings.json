@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(LICENSE)",
+      "Write(LICENSE)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'if echo \"$TOOL_INPUT\" | grep -qE \"LICENSE\"; then echo \"BLOCKED: LICENSE is protected\" >&2; exit 1; fi'"
+          }
+        ]
+      }
+    ]
+  }
+}

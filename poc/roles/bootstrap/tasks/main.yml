@@ -1,0 +1,66 @@
+---
+- name: Require KUBECONFIG_HUB and KUBECONFIG_SPOKE
+  ansible.builtin.assert:
+    that:
+      - clusters.hub.kubeconfig | length > 0
+      - clusters.spoke.kubeconfig | length > 0
+      - clusters.hub.kubeconfig is exists
+      - clusters.spoke.kubeconfig is exists
+    fail_msg: >-
+      Defina KUBECONFIG_HUB e KUBECONFIG_SPOKE apontando para kubeconfigs
+      já autenticados (veja .env.example). Nunca coloque senhas no inventário.
+
+- name: Require KUBECONFIG_SPOKE_TWO when requested
+  ansible.builtin.assert:
+    that:
+      - clusters.spoke_two.kubeconfig | length > 0
+      - clusters.spoke_two.kubeconfig is exists
+    fail_msg: Defina KUBECONFIG_SPOKE_TWO para Parts 2+.
+  when: require_spoke_two | default(false) | bool
+
+- name: Verify hub API connectivity
+  kubernetes.core.k8s_info:
+    kind: Namespace
+    name: default
+    kubeconfig: "{{ clusters.hub.kubeconfig }}"
+  register: hub_ns
+
+- name: Verify spoke API connectivity
+  kubernetes.core.k8s_info:
+    kind: Namespace
+    name: default
+    kubeconfig: "{{ clusters.spoke.kubeconfig }}"
+
+- name: Verify spoke-two API connectivity
+  kubernetes.core.k8s_info:
+    kind: Namespace
+    name: default
+    kubeconfig: "{{ clusters.spoke_two.kubeconfig }}"
+  when: require_spoke_two | default(false) | bool
+
+- name: Check oc and openssl are available
+  ansible.builtin.command: "{{ item }} version"
+  loop:
+    - oc
+    - openssl
+  changed_when: false
+  failed_when: false
+  register: tool_checks
+
+- name: Assert oc is usable
+  ansible.builtin.assert:
+    that: tool_checks.results[0].rc == 0
+    fail_msg: Instale o cliente oc e garanta que está no PATH.
+
+- name: Check istioctl when remote secrets needed
+  ansible.builtin.command: "{{ istioctl_bin }} version --remote=false"
+  changed_when: false
+  failed_when: false
+  register: istioctl_check
+  when: require_istioctl | default(false) | bool
+
+- name: Assert istioctl is available
+  ansible.builtin.assert:
+    that: istioctl_check.rc == 0
+    fail_msg: "Instale istioctl {{ istio_version }} e exporte PATH (ou ajuste istioctl_bin)."
+  when: require_istioctl | default(false) | bool

@@ -1,0 +1,58 @@
+---
+- name: Apply HBONE East-West Gateway
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ ew_cluster.kubeconfig }}"
+    definition: "{{ lookup('template', 'hbone-gateway.yml.j2') | from_yaml }}"
+  vars:
+    ew_network: "{{ ew_cluster.network }}"
+
+- name: Wait HBONE Gateway Programmed
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    name: istio-eastwestgateway
+    namespace: "{{ mesh_namespace }}"
+    kubeconfig: "{{ ew_cluster.kubeconfig }}"
+  register: hbone_gw
+  until: >
+    hbone_gw.resources | length > 0 and
+    (
+      hbone_gw.resources[0].status.conditions
+      | default([])
+      | selectattr('type', 'equalto', 'Programmed')
+      | selectattr('status', 'equalto', 'True')
+      | list
+      | length
+    ) > 0
+  retries: 36
+  delay: 10
+
+- name: Apply sidecar East-West Gateway
+  kubernetes.core.k8s:
+    state: present
+    kubeconfig: "{{ ew_cluster.kubeconfig }}"
+    definition: "{{ lookup('template', 'sidecar-gateway.yml.j2') | from_yaml }}"
+  vars:
+    ew_network: "{{ ew_cluster.network }}"
+
+- name: Wait sidecar Gateway Programmed
+  kubernetes.core.k8s_info:
+    api_version: gateway.networking.k8s.io/v1
+    kind: Gateway
+    name: istio-eastwestgateway-sidecar
+    namespace: "{{ mesh_namespace }}"
+    kubeconfig: "{{ ew_cluster.kubeconfig }}"
+  register: sidecar_gw
+  until: >
+    sidecar_gw.resources | length > 0 and
+    (
+      sidecar_gw.resources[0].status.conditions
+      | default([])
+      | selectattr('type', 'equalto', 'Programmed')
+      | selectattr('status', 'equalto', 'True')
+      | list
+      | length
+    ) > 0
+  retries: 36
+  delay: 10

@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kiali-health-status-bookinfo
+  namespace: {{ kiali_ns }}
+  labels:
+    openshift.io/prometheus-rule-evaluation-scope: leaf-prometheus
+spec:
+  groups:
+  - name: kiali.health.bookinfo
+    rules:
+    - alert: KialiBookinfoHealthFailure
+      expr: |
+        kiali:health_status:max{
+          health_type=~"app|service|workload",
+          exported_namespace="bookinfo"
+        } == 3
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "{% raw %}Bookinfo {{ $labels.health_type }} {{ $labels.name }} is in Failure{% endraw %}"

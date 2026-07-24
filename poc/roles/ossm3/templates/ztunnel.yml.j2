@@ -1,0 +1,14 @@
+apiVersion: sailoperator.io/v1
+kind: ZTunnel
+metadata:
+  name: default
+spec:
+  namespace: {{ ztunnel_namespace }}
+  version: v{{ istio_version }}
+{% if ossm3_multi_primary %}
+  values:
+    ztunnel:
+      multiCluster:
+        clusterName: {{ ossm3_cluster.name }}
+      network: {{ ossm3_cluster.network }}
+{% endif %}

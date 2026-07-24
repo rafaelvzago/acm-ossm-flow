@@ -1,0 +1,17 @@
+---
+- name: Verify deployment health
+  hosts: localhost
+  gather_facts: false
+  pre_tasks:
+    - name: Bootstrap hub and spoke
+      ansible.builtin.include_role:
+        name: bootstrap
+      vars:
+        require_spoke_two: "{{ verify_multi_primary | default(false) }}"
+        require_istioctl: false
+  roles:
+    - role: verify
+      vars:
+        # No site.yml: use -e verify_multi_primary=true -e verify_perses=true
+        verify_multi_primary: "{{ verify_multi_primary | default(false) }}"
+        verify_perses: "{{ verify_perses | default(false) }}"

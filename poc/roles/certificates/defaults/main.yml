@@ -1,0 +1,4 @@
+---
+# cluster_key: spoke | spoke_two — which intermediate to generate/apply
+certificates_cluster_key: spoke
+certificates_generate_root: true
