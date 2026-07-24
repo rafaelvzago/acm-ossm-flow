@@ -3,3 +3,14 @@
 .DS_Store
 memory/
 node_modules/
+
+# Secrets and generated lab artifacts (never commit)
+files/certs/*
+!files/certs/.gitkeep
+files/generated/*
+!files/generated/.gitkeep
+.env
+*.kubeconfig
+*.retry
+/tmp/
+otel-mtls/
